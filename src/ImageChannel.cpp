@@ -22,12 +22,12 @@
 
 imgsize_t ImageChannel::width() const
 {
-    return raw->width/pattern.xdelta;
+    return (raw->width - raw->xalign) / pattern.xdelta;
 }
 
 imgsize_t ImageChannel::height() const
 {
-    return raw->height/pattern.ydelta;
+    return (raw->height - raw->yalign) / pattern.ydelta;
 }
 
 ImageSelection::ptr ImageChannel::select(double partsPerUnit) const

@@ -48,7 +48,8 @@ bitdepth_t ImageSelection::pixel(imgsize_t cx, imgsize_t cy) const
     if (cx >= width) throw ImageException(VA_STR("out of range: X(" << cx << ") beyond " << width - 1));
     if (cy >= height) throw ImageException(VA_STR("out of range: Y(" << cy << ") beyond " << height - 1));
     const FilterPattern& bayer = channel->pattern;
-    auto offset = channel->raw->width * ((y + cy) * bayer.ydelta + bayer.yshift) + (x + cx) * bayer.xdelta + bayer.xshift;
+    auto offset = ((y + cy) * bayer.ydelta + channel->raw->yalign + bayer.yshift) * channel->raw->width +
+                   (x + cx) * bayer.xdelta + channel->raw->xalign + ((y + cy) & 1? bayer.xshift_o : bayer.xshift_e);
     return *(channel->raw->data + offset);
 }
 
@@ -57,9 +58,12 @@ ImageSelection::Iterator::Iterator(const std::shared_ptr<const ImageSelection>& 
     const ImageChannel::ptr& image = selection->channel;
     const FilterPattern& bayer = image->pattern;
 
+    auto xshift = selection->y & 1? bayer.xshift_o : bayer.xshift_e;
+    yskipShift = (selection->y & 1? bayer.xshift_e : bayer.xshift_o) - xshift;
+
     rawStartOffset = image->raw->data
-                   + image->raw->width * (selection->y * bayer.ydelta + bayer.yshift)
-                   + selection->x * bayer.xdelta + bayer.xshift;
+                   + (selection->y * bayer.ydelta + image->raw->yalign + bayer.yshift) * image->raw->width
+                   +  selection->x * bayer.xdelta + image->raw->xalign + xshift;
 
     yskip = imgsize_t(image->raw->width * bayer.ydelta - (selection->width - 1) * bayer.xdelta);
     xskip = bayer.xdelta;

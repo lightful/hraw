@@ -38,10 +38,13 @@ class RawImage : public std::enable_shared_from_this<RawImage>
 
         virtual ~RawImage() { if(data) delete []data; }
 
-        static RawImage::ptr fromPGM(const std::string& fileName) // create this object from a PGM file
+        static RawImage::ptr fromPGM(const std::string& fileName,
+                                     imgsize_t xalign = 0, imgsize_t yalign = 0) // create this object from a PGM file
         {
             std::shared_ptr<RawImage> image(new RawImage());
             image->readPGM(fileName);
+            image->xalign = xalign < image->width? xalign : 0;
+            image->yalign = yalign < image->height? yalign : 0;
             return image;
         }
 
@@ -53,6 +56,8 @@ class RawImage : public std::enable_shared_from_this<RawImage>
         bitdepth_t* data; // std::vector would require a wasteful and unuseful memory initialization
         imgsize_t width;
         imgsize_t height;
+        imgsize_t xalign; // pixels to skip from left & top (odd size in optical black area causing Bayer misalignment)
+        imgsize_t yalign;
 
     private:
 

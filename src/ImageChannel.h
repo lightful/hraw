@@ -23,17 +23,19 @@
 
 struct FilterPattern // allows to represent any (simple) periodic pixel pattern
 {
-    imgsize_t xshift; // 0  1  0  1  <-- example for a RGGB matrix:
-    imgsize_t yshift; // 0  0  1  1                R  G1
-    imgsize_t xdelta; // 2  2  2  2                G2  B
-    imgsize_t ydelta; // 2  2  2  2
-                      // R G1 G2  B
+    imgsize_t xshift_e; // 0  1  0  1 (even rows)
+    imgsize_t xshift_o; // 0  1  0  1 (odd rows)
+    imgsize_t yshift;   // 0  0  1  1
+    imgsize_t xdelta;   // 2  2  2  2  <-- example for a RGGB matrix:
+    imgsize_t ydelta;   // 2  2  2  2                R  G1
+                        // R G1 G2  B                G2  B
 
-    static FilterPattern RGGB_R()  { return FilterPattern { 0, 0, 2, 2 };  }
-    static FilterPattern RGGB_G1() { return FilterPattern { 1, 0, 2, 2 };  }
-    static FilterPattern RGGB_G2() { return FilterPattern { 0, 1, 2, 2 };  }
-    static FilterPattern RGGB_B()  { return FilterPattern { 1, 1, 2, 2 };  }
-    static FilterPattern FULL()    { return FilterPattern { 0, 0, 1, 1 };  } // full plain image (all pixels)
+    static FilterPattern RGGB_R()  { return FilterPattern { 0, 0, 0, 2, 2 };  }
+    static FilterPattern RGGB_G1() { return FilterPattern { 1, 1, 0, 2, 2 };  }
+    static FilterPattern RGGB_G2() { return FilterPattern { 0, 0, 1, 2, 2 };  }
+    static FilterPattern RGGB_G()  { return FilterPattern { 1, 0, 0, 2, 1 };  } // both green channels
+    static FilterPattern RGGB_B()  { return FilterPattern { 1, 1, 1, 2, 2 };  }
+    static FilterPattern FULL()    { return FilterPattern { 0, 0, 0, 1, 1 };  } // full plain image (all pixels)
 };
 
 class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtualizes a color channel selection
@@ -41,7 +43,7 @@ class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtua
         ImageChannel& operator=(const ImageChannel&) = delete;
         ImageChannel(const ImageChannel&) = delete;
 
-  public:
+    public:
 
         typedef std::shared_ptr<const ImageChannel> ptr;
 

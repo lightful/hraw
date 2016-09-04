@@ -77,7 +77,8 @@ class ImageSelection // virtualizes a image area selection within a channel
                     else
                     {
                         nextColumn = selection->width;
-                        rawData += yskip;
+                        rawData += yskipNext;
+                        std::swap(yskipNext, yskipPrev);
                         nextRow--;
                     }
                     return pixelValue;
@@ -86,6 +87,8 @@ class ImageSelection // virtualizes a image area selection within a channel
                 void rewind() // allow another full iteration
                 {
                     rawData = rawStartOffset;
+                    yskipNext = yskip + yskipShift;
+                    yskipPrev = yskip - yskipShift;
                     nextColumn = selection->width;
                     nextRow = selection->height;
                 }
@@ -97,8 +100,11 @@ class ImageSelection // virtualizes a image area selection within a channel
                 bitdepth_t* rawStartOffset;
                 imgsize_t xskip;
                 imgsize_t yskip;
+                imgsize_t yskipShift;
 
                 bitdepth_t* rawData;
+                imgsize_t yskipNext;
+                imgsize_t yskipPrev;
                 imgsize_t nextColumn;
                 imgsize_t nextRow;
         };
