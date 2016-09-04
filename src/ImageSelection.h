@@ -51,6 +51,8 @@ class ImageSelection // virtualizes a image area selection within a channel
         const imgsize_t x, y;
         const imgsize_t width, height;
 
+        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const;
+
         bitdepth_t pixel(imgsize_t cx, imgsize_t cy) const; // for (slower) random access
 
         bool sameAs(const ImageSelection::ptr& that) const

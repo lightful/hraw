@@ -43,6 +43,21 @@ ImageSelection::ImageSelection(
     );
 }
 
+ImageSelection::ptr ImageSelection::select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const
+{
+    if ((uint64_t) cx + selectedWidth > width) throw ImageException
+    (
+        VA_STR("out of range: X(" << cx << ") + width(" << selectedWidth << ") beyond " << width)
+    );
+
+    if ((uint64_t) cy + selectedHeight > height) throw ImageException
+    (
+        VA_STR("out of range: Y(" << cy << ") + height(" << selectedHeight << ") beyond " << height)
+    );
+
+    return ImageSelection::ptr(new ImageSelection(channel, x + cx, y + cy, selectedWidth, selectedHeight));
+}
+
 bitdepth_t ImageSelection::pixel(imgsize_t cx, imgsize_t cy) const
 {
     if (cx >= width) throw ImageException(VA_STR("out of range: X(" << cx << ") beyond " << width - 1));
