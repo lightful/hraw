@@ -40,62 +40,111 @@ class ImageSelection // virtualizes a image area selection within a channel
 
     public:
 
-        typedef std::shared_ptr<const ImageSelection> ptr;
+        typedef std::shared_ptr<ImageSelection> ptr;
 
-        explicit ImageSelection(const std::shared_ptr<const class ImageChannel>& imageChannel,
+        explicit ImageSelection(const std::shared_ptr<class ImageChannel>& imageChannel,
                                 imgsize_t cx, imgsize_t cy,
                                 imgsize_t imageWidth, imgsize_t imageHeight);
 
-        const std::shared_ptr<const class ImageChannel> channel;
+        const std::shared_ptr<class ImageChannel> channel;
 
         const imgsize_t x, y;
         const imgsize_t width, height;
 
-        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const;
+        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t subSelWidth, imgsize_t subSelHeight) const;
 
-        bitdepth_t pixel(imgsize_t cx, imgsize_t cy) const; // for (slower) random access
+        bitdepth_t& pixel(imgsize_t cx, imgsize_t cy) const; // for random access (5-10 times slower upon compilers)
 
         bool sameAs(const ImageSelection::ptr& that) const
         {
             return (width == that->width) && (height == that->height) && (x == that->x) && (y == that->y);
         }
 
-        class Iterator // fast sequential fetching of all pixels from left to right and top to bottom
+        imgsize_t pixelCount() const
+        {
+            return width * height;
+        }
+
+        /* High-performance sequential in-situ fetching of all pixels from left to right and top to bottom
+         *
+         *     ImageSelection::Iterator pixel(bitmap);
+         *
+         *     double sum = pixel; // as number gets the current pixel value
+         *     while (++pixel)     // pre-increment: goes to the next pixel and returns false if not exists
+         *         sum += pixel;   // as number gets the current pixel value
+         *
+         *     pixel.rewind(); // another pass
+         *     while (pixel) // as boolean gets the current pixel existence (not its value)
+         *     {
+         *         pixel = pixel * pixel; // modify the current pixel (as number gets the current pixel value)
+         *         printSquared(pixel++); // post-increment: gets the current pixel value and goes to the next pixel
+         *     }
+         */
+        class Iterator
         {
                 Iterator& operator=(const Iterator&) = delete;
                 Iterator(const Iterator&) = delete;
 
             public:
 
-                explicit Iterator(const std::shared_ptr<const ImageSelection>& imageSelection);
+                explicit Iterator(const std::shared_ptr<ImageSelection>& imageSelection);
+                explicit Iterator(const std::shared_ptr<ImageChannel>& imageChannel);
 
-                inline bool hasPixel() const { return nextRow; } // becomes false at end of data
-
-                inline bitdepth_t nextPixel() // high performance in-situ sequential fetching
+                inline explicit operator bool() const // if tested as boolean becomes false at end of data
                 {
-                    if (!nextRow) throw ImageException("nextPixel EOD");
+                    return nextRow > 0;
+                }
+
+                inline operator bitdepth_t() const // automatic conversion to return the current pixel value
+                {
+                    if (!nextRow) throw ImageException("No pixel!");
                     bitdepth_t pixelValue = *rawData;
-                    if (--nextColumn) rawData += xskip; // jumps accounting for the Bayer geometry
+                    return pixelValue;
+                }
+
+                inline bitdepth_t operator++(int) // gets the current pixel value plus advances to the next pixel
+                {
+                    bitdepth_t pixelValue = operator bitdepth_t();
+                    next();
+                    return pixelValue;
+                }
+
+                inline bool operator++() // advances to the next pixel and returns false if there aren't more pixels
+                {
+                    next();
+                    return operator bool();
+                }
+
+                template <typename Number> inline bitdepth_t operator=(Number pixelValue) // sets the current pixel value
+                {
+                    if (!nextRow) throw ImageException("No pixel!");
+                    bitdepth_t integerValue = (bitdepth_t) pixelValue; // no need to cast on client side
+                    *rawData = integerValue;
+                    return integerValue;
+                }
+
+                inline void next() // fast position update accounting for the Bayer geometry
+                {
+                    if (--nextColumn) rawData += xskip;
                     else
                     {
-                        nextColumn = selection->width;
+                        nextColumn = selection->width; // this code executed a single time per row of pixels
                         rawData += yskipNext;
                         std::swap(yskipNext, yskipPrev);
                         nextRow--;
                     }
-                    return pixelValue;
                 }
 
-                void rewind() // allow another full iteration
+                void rewind() // allow another full iteration of the image selection
                 {
                     rawData = rawStartOffset;
-                    yskipNext = yskip + yskipShift;
-                    yskipPrev = yskip - yskipShift;
+                    yskipNext = yskip + yskipShift; // these deal with the pixel column position in the Bayer
+                    yskipPrev = yskip - yskipShift; // matrix potentially differing in odd and even rows
                     nextColumn = selection->width;
                     nextRow = selection->height;
                 }
 
-                const std::shared_ptr<const class ImageSelection> selection;
+                const std::shared_ptr<class ImageSelection> selection;
 
             private:
 

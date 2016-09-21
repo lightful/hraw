@@ -22,8 +22,8 @@
 ImageMath::Histogram ImageMath::buildHistogram(const ImageSelection::ptr& bitmap)
 {
     ImageMath::Histogram info;
-    ImageSelection::Iterator area(bitmap);
-    while (area.hasPixel()) ++info.data[area.nextPixel()];
+    ImageSelection::Iterator pixel(bitmap);
+    while (pixel) ++info.data[pixel++];
     info.total = 0;
     info.mode = 0;
     uint64_t modeFreq = 0;
@@ -70,21 +70,18 @@ ImageMath::Highlights ImageMath::getHighlights(const Histogram& histogram)
 ImageMath::Stats1 ImageMath::analyze(const ImageSelection::ptr& bitmap)
 {
     Stats1 result;
-    ImageSelection::Iterator area(bitmap);
-    bitdepth_t dn = area.nextPixel();
+    ImageSelection::Iterator dn(bitmap);
     result.max = result.min = dn;
     long double sum_x = dn;
     long double sum_x2 = dn * dn; // room for gigapixels
-    while (area.hasPixel()) // single-pass algorithm
+    while (++dn) // single-pass algorithm
     {
-        dn = area.nextPixel();
         if (dn > result.max) result.max = dn; else if (dn < result.min) result.min = dn;
         sum_x += dn;
         sum_x2 += dn * dn;
     }
-    auto pixels = bitmap->width * bitmap->height;
-    long double expectedValue = sum_x / pixels;
-    long double variance = sum_x2 / pixels - expectedValue * expectedValue;
+    long double expectedValue = sum_x / bitmap->pixelCount();
+    long double variance = sum_x2 / bitmap->pixelCount() - expectedValue * expectedValue;
     result.mean = double(expectedValue);
     result.stdev = double(std::sqrt(variance));
     return result;
@@ -94,10 +91,8 @@ ImageMath::Stats2 ImageMath::subtract(const ImageSelection::ptr& bitmapA, const 
 {
     if (!bitmapA->sameAs(bitmapB)) throw ImageException("can't subtract bitmaps of different size/placement");
     Stats2 result;
-    ImageSelection::Iterator areaA(bitmapA);
-    ImageSelection::Iterator areaB(bitmapB);
-    bitdepth_t dnA = areaA.nextPixel();
-    bitdepth_t dnB = areaB.nextPixel();
+    ImageSelection::Iterator dnA(bitmapA);
+    ImageSelection::Iterator dnB(bitmapB);
     result.a.max = result.a.min = dnA;
     result.b.max = result.b.min = dnB;
     long double sum_A = dnA;
@@ -107,13 +102,11 @@ ImageMath::Stats2 ImageMath::subtract(const ImageSelection::ptr& bitmapA, const 
     double delta = dnA - dnB;
     long double sum_d = delta;
     long double sum_d2 = delta * delta;
-    while (areaA.hasPixel())
+    while (++dnA && ++dnB)
     {
-        dnA = areaA.nextPixel();
         if (dnA > result.a.max) result.a.max = dnA; else if (dnA < result.a.min) result.a.min = dnA;
         sum_A += dnA;
         sum_A2 += dnA * dnA;
-        dnB = areaB.nextPixel();
         if (dnB > result.b.max) result.b.max = dnB; else if (dnB < result.b.min) result.b.min = dnB;
         sum_B += dnB;
         sum_B2 += dnB * dnB;
@@ -121,7 +114,7 @@ ImageMath::Stats2 ImageMath::subtract(const ImageSelection::ptr& bitmapA, const 
         sum_d += delta;
         sum_d2 += delta * delta;
     }
-    auto pixels = bitmapA->width * bitmapA->height;
+    auto pixels = bitmapA->pixelCount();
     long double expectedValue = sum_d / pixels;
     long double variance = sum_d2 / pixels - expectedValue * expectedValue;
     result.stdev = double(std::sqrt(variance / 2));

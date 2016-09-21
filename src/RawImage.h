@@ -28,40 +28,71 @@
  */
 class RawImage : public std::enable_shared_from_this<RawImage>
 {
-        explicit RawImage(): data(0) {}
+        explicit RawImage(imgsize_t width, imgsize_t height, imgsize_t widthMasked, imgsize_t heightMasked)
+          : length(imgsize_t(sizeof(bitdepth_t) * width * height)),
+            data(new bitdepth_t[length]),
+            rowPixels(width), colPixels(height),
+            leftMask(widthMasked < width? widthMasked : 0), topMask(heightMasked < height? heightMasked : 0)
+        {}
+
         RawImage& operator=(const RawImage&) = delete;
         RawImage(const RawImage&) = delete;
 
     public:
 
-        typedef std::shared_ptr<const RawImage> ptr; // nobody must change a RAW :D
+        typedef std::shared_ptr<RawImage> ptr;
 
         virtual ~RawImage() { if(data) delete []data; }
 
-        static RawImage::ptr fromPGM(const std::string& fileName,
-                                     imgsize_t xalign = 0, imgsize_t yalign = 0) // create this object from a PGM file
+        static RawImage::ptr create(imgsize_t width, imgsize_t height, imgsize_t leftMask, imgsize_t topMask)
         {
-            std::shared_ptr<RawImage> image(new RawImage());
-            image->readPGM(fileName);
-            image->xalign = xalign < image->width? xalign : 0;
-            image->yalign = yalign < image->height? yalign : 0;
-            return image;
+            return RawImage::ptr(new RawImage(width, height, leftMask, topMask));
         }
 
-        ImageChannel::ptr getChannel(const FilterPattern& filterPattern) const
+        static RawImage::ptr create(const RawImage::ptr& config) // data allocated but not copied
+        {
+            return create(config->rowPixels, config->colPixels, config->leftMask, config->topMask);
+        }
+
+        static RawImage::ptr load(const std::string& fileName, imgsize_t leftMask = 0, imgsize_t topMask = 0);
+
+        void save(const std::string& fileName) const;
+
+        ImageChannel::ptr getChannel(const FilterPattern& filterPattern)
         {
             return ImageChannel::ptr(new ImageChannel(shared_from_this(), filterPattern));
         }
 
-        bitdepth_t* data; // std::vector would require a wasteful and unuseful memory initialization
-        imgsize_t width;
-        imgsize_t height;
-        imgsize_t xalign; // pixels to skip from left & top (odd size in optical black area causing Bayer misalignment)
-        imgsize_t yalign;
+        bool sameSizeAs(const RawImage::ptr& that) const
+        {
+            return (rowPixels == that->rowPixels) && (colPixels == that->colPixels)
+                && (leftMask == that->leftMask) && (topMask == that->topMask);
+        }
+
+        imgsize_t pixelCount(bool effective = true) const
+        {
+            return (rowPixels - (effective? leftMask : 0)) * (colPixels - (effective? topMask : 0));
+        }
+
+        inline imgsize_t bayerStart() const { return yalign() * rowPixels + xalign(); }
+
+        inline imgsize_t bayerWidth() const { return rowPixels - xalign(); }
+
+        inline imgsize_t bayerHeight() const { return colPixels - yalign(); }
+
+        const imgsize_t length;
+        bitdepth_t* const data; // std::vector would require a wasteful and unuseful memory initialization
+
+        const imgsize_t rowPixels; // physical image dimensions
+        const imgsize_t colPixels;
+
+        const imgsize_t leftMask; // masked pixels (optical black area)
+        const imgsize_t topMask;
 
     private:
 
-        void readPGM(const std::string& fileName);
+        inline imgsize_t xalign() const { return leftMask & 1; } // pixels to skip from left & top (odd size in
+        inline imgsize_t yalign() const { return topMask & 1; }  // optical black area causing Bayer misalignment)
 };
 
 #endif /* RAWIMAGE_H_ */

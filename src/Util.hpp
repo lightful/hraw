@@ -20,7 +20,43 @@
 #define UTIL_HPP_
 
 #include <sstream>
+#include <string>
+#include <cctype>
+#include <algorithm>
+#include <cstdint>
+#include <chrono>
 
 #define VA_STR(x) dynamic_cast<std::ostringstream const&>(std::ostringstream().flush() << x).str()
+
+struct String
+{
+    static std::string tolower(const std::string& str)
+    {
+        std::string lcase = str;
+        std::transform(lcase.begin(), lcase.end(), lcase.begin(), ::tolower);
+        return lcase;
+    }
+
+    static std::string toupper(const std::string& str)
+    {
+        std::string lcase = str;
+        std::transform(lcase.begin(), lcase.end(), lcase.begin(), ::toupper);
+        return lcase;
+    }
+
+    static std::string right(const std::string& str, std::string::size_type count)
+    {
+        return str.substr(str.size() - std::min(count, str.size()));
+    }
+};
+
+struct Util
+{
+    static int64_t epochNs() // nanoseconds since 1970
+    {
+        auto nowIs = std::chrono::system_clock::now().time_since_epoch();
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(nowIs).count();
+    }
+};
 
 #endif /* UTIL_HPP_ */

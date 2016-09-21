@@ -19,6 +19,8 @@
 #ifndef IMAGECHANNEL_H_
 #define IMAGECHANNEL_H_
 
+#include <istream>
+#include <ostream>
 #include "ImageSelection.h"
 
 struct FilterPattern // allows to represent any (simple) periodic pixel pattern
@@ -36,6 +38,12 @@ struct FilterPattern // allows to represent any (simple) periodic pixel pattern
     static FilterPattern RGGB_G()  { return FilterPattern { 1, 0, 0, 2, 1 };  } // both green channels
     static FilterPattern RGGB_B()  { return FilterPattern { 1, 1, 1, 2, 2 };  }
     static FilterPattern FULL()    { return FilterPattern { 0, 0, 0, 1, 1 };  } // full plain image (all pixels)
+
+    bool operator==(const FilterPattern& fp) const
+    {
+        return (xshift_e == fp.xshift_e) && (xshift_o == fp.xshift_o)
+            && (yshift == fp.yshift) && (xdelta == fp.xdelta) && (ydelta == fp.ydelta);
+    }
 };
 
 class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtualizes a color channel selection
@@ -45,31 +53,31 @@ class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtua
 
     public:
 
-        typedef std::shared_ptr<const ImageChannel> ptr;
+        typedef std::shared_ptr<ImageChannel> ptr;
 
-        explicit ImageChannel(const std::shared_ptr<const class RawImage>& rawImage, const FilterPattern& filterPattern)
+        explicit ImageChannel(const std::shared_ptr<class RawImage>& rawImage, const FilterPattern& filterPattern)
           : raw(rawImage),
             pattern(filterPattern)
         {}
 
-        const std::shared_ptr<const class RawImage> raw;
+        const std::shared_ptr<class RawImage> raw;
         const FilterPattern pattern;
 
         imgsize_t width() const;
         imgsize_t height() const;
 
-        ImageSelection::ptr select() const // full channel
+        ImageSelection::ptr select() // full channel
         {
             return ImageSelection::ptr(new ImageSelection(shared_from_this(), 0, 0, width(), height()));
         }
 
-        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const
+        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight)
         {
-            select();
             return ImageSelection::ptr(new ImageSelection(shared_from_this(), cx, cy, selectedWidth, selectedHeight));
         }
-
-        ImageSelection::ptr select(double partsPerUnit) const; // square from center
 };
+
+std::ostream& operator<<(std::ostream& out, const FilterPattern& fp);
+std::istream& operator>>(std::istream& in, FilterPattern& fp);
 
 #endif /* IMAGECHANNEL_H_ */

@@ -16,25 +16,44 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <cmath>
 #include "RawImage.h"
 #include "ImageChannel.h"
+#include "Util.hpp"
 
 imgsize_t ImageChannel::width() const
 {
-    return (raw->width - raw->xalign) / pattern.xdelta;
+    return raw->bayerWidth() / pattern.xdelta;
 }
 
 imgsize_t ImageChannel::height() const
 {
-    return (raw->height - raw->yalign) / pattern.ydelta;
+    return raw->bayerHeight() / pattern.ydelta;
 }
 
-ImageSelection::ptr ImageChannel::select(double partsPerUnit) const
+std::ostream& operator<<(std::ostream& out, const FilterPattern& fp)
 {
-    uint64_t area = uint64_t(partsPerUnit * width() * height());
-    imgsize_t side = imgsize_t(std::sqrt(area));
-    imgsize_t x = imgsize_t((width()-side)/2);
-    imgsize_t y = imgsize_t((height()-side)/2);
-    return ImageSelection::ptr(new ImageSelection(shared_from_this(), x, y, side, side));
+    if      (fp == FilterPattern::RGGB_R())  return out << "R";
+    else if (fp == FilterPattern::RGGB_G1()) return out << "G1";
+    else if (fp == FilterPattern::RGGB_G2()) return out << "G2";
+    else if (fp == FilterPattern::RGGB_G())  return out << "G";
+    else if (fp == FilterPattern::RGGB_B())  return out << "B";
+    else if (fp == FilterPattern::FULL())    return out << "RGB";
+    else                                     return out << "?";
+}
+
+std::istream& operator>>(std::istream& in, FilterPattern& fp)
+{
+    std::string str;
+    if (in >> str)
+    {
+        str = String::toupper(str);
+             if (!str.compare("R"))   fp = FilterPattern::RGGB_R();
+        else if (!str.compare("G1"))  fp = FilterPattern::RGGB_G1();
+        else if (!str.compare("G2"))  fp = FilterPattern::RGGB_G2();
+        else if (!str.compare("G"))   fp = FilterPattern::RGGB_G();
+        else if (!str.compare("B"))   fp = FilterPattern::RGGB_B();
+        else if (!str.compare("RGB")) fp = FilterPattern::FULL();
+        else in.setstate(std::ios_base::failbit);
+    }
+    return in;
 }

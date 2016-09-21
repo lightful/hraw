@@ -32,16 +32,16 @@ int main()
     try
     {
         // read noise from masked pixels (optical black area)
-        RawImage::ptr raw = RawImage::fromPGM("data/misc/IMG_2597.pgm");
+        RawImage::ptr raw = RawImage::load("data/misc/IMG_2597.pgm");
         ImageChannel::ptr plain = raw->getChannel(FilterPattern::FULL());
-        ImageSelection::ptr maskedPixels = plain->select(0, 18, 42-2, imgsize_t(raw->height - 18)); // Canon 400D
+        ImageSelection::ptr maskedPixels = plain->select(0, 18, 42-2, imgsize_t(plain->height() - 18)); // Canon 400D
         ImageMath::Stats1 statsMasked;
         statsMasked = ImageMath::analyze(maskedPixels);
         std::cout << "read noise (DN) masked area: " << statsMasked.stdev << std::endl;
 
         // read noise from black frames ISO 100 (shoot with lens cap on)
-        RawImage::ptr rawDarkA = RawImage::fromPGM("data/black/IMG_2762.pgm");
-        RawImage::ptr rawDarkB = RawImage::fromPGM("data/black/IMG_2763.pgm");
+        RawImage::ptr rawDarkA = RawImage::load("data/black/IMG_2762.pgm");
+        RawImage::ptr rawDarkB = RawImage::load("data/black/IMG_2763.pgm");
         ImageChannel::ptr plainDarkA = rawDarkA->getChannel(FilterPattern::FULL());
         ImageChannel::ptr plainDarkB = rawDarkB->getChannel(FilterPattern::FULL());
         ImageMath::Stats2 blackStats = ImageMath::subtract(plainDarkA->select(), plainDarkB->select());
@@ -51,8 +51,8 @@ int main()
         std::cout << "black level (DN): " << blackLevel << std::endl;
 
         // SNR from white frames ISO 100 (uniform illumination, close to overexposed but at least one channel not clipped)
-        RawImage::ptr rawWhiteA = RawImage::fromPGM("data/snr/IMG_2790.pgm");
-        RawImage::ptr rawWhiteB = RawImage::fromPGM("data/snr/IMG_2791.pgm");
+        RawImage::ptr rawWhiteA = RawImage::load("data/snr/IMG_2790.pgm");
+        RawImage::ptr rawWhiteB = RawImage::load("data/snr/IMG_2791.pgm");
 
         double maxSignal = 0, maxSignalSaturation = 0;
         bitdepth_t maxWhiteLevel = 0;
@@ -122,8 +122,8 @@ int main()
         int pic = 2762;
         for (int iso = 100; iso <= 1600; iso *= 2)
         {
-            RawImage::ptr darkA = RawImage::fromPGM(VA_STR("data/black/IMG_" << pic++ << ".pgm"));
-            RawImage::ptr darkB = RawImage::fromPGM(VA_STR("data/black/IMG_" << pic++ << ".pgm"));
+            RawImage::ptr darkA = RawImage::load(VA_STR("data/black/IMG_" << pic++ << ".pgm"));
+            RawImage::ptr darkB = RawImage::load(VA_STR("data/black/IMG_" << pic++ << ".pgm"));
             ImageChannel::ptr plainA = darkA->getChannel(FilterPattern::FULL());
             ImageChannel::ptr plainB = darkB->getChannel(FilterPattern::FULL());
             ImageSelection::ptr blackA = plainA->select();
