@@ -39,34 +39,6 @@ ImageMath::Histogram ImageMath::buildHistogram(const ImageSelection::ptr& bitmap
     return info;
 }
 
-ImageMath::Highlights ImageMath::getHighlights(const Histogram& histogram)
-{
-    if (histogram.data.empty()) throw ImageException("getHighlights: empty histogram");
-    Highlights info { 0, 0 };
-    info.clippedCount = 0;
-    uint64_t threshold = histogram.total / 10000;
-    for (auto ritf = histogram.data.crbegin(); ritf != histogram.data.crend(); ++ritf)
-    {
-        info.clippedCount += ritf->second;
-        if (ritf->second > threshold)
-        {
-            if (info.clippedCount - ritf->second < threshold / 10) // overexposed
-            {
-                info.whiteLevel = ++ritf != histogram.data.rend()? ritf->first : 0;
-            }
-            else
-            {
-                info.clippedCount = 0;
-                while ((ritf != histogram.data.crbegin()) && ritf->second) ++ritf;
-                if (!ritf->second) --ritf;
-                info.whiteLevel = ritf->first;
-            }
-            break;
-        }
-    }
-    return info;
-}
-
 ImageMath::Stats1 ImageMath::analyze(const ImageSelection::ptr& bitmap)
 {
     Stats1 result;

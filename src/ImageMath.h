@@ -49,14 +49,7 @@ class ImageMath
             bitdepth_t mode; // statistical mode
         };
 
-        struct Highlights // less unreliable when got from full-size channel histograms
-        {
-            bitdepth_t whiteLevel;  // highest non clipped DN
-            imgsize_t clippedCount; // amount of pixels
-        };
-
         static Histogram buildHistogram(const ImageSelection::ptr& bitmap);
-        static Highlights getHighlights(const Histogram& histogram);
         static Stats1 analyze(const ImageSelection::ptr& bitmap);
         static Stats2 subtract(const ImageSelection::ptr& bitmapA, const ImageSelection::ptr& bitmapB);
 };
