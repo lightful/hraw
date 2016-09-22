@@ -31,6 +31,10 @@ template <typename T> T toLocalEndian(T number);
 template <> uint16_t toLocalEndian(uint16_t number) { return ntohs(number); }
 template <> uint32_t toLocalEndian(uint32_t number) { return ntohl(number); }
 
+template <typename T> T toFileEndian(T number);
+template <> uint16_t toFileEndian(uint16_t number)  { return htons(number); }
+template <> uint32_t toFileEndian(uint32_t number)  { return htonl(number); }
+
 RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& header,
                       imgsize_t leftMask, imgsize_t topMask)
 {
@@ -102,11 +106,36 @@ RawImage::ptr RawImage::load(const std::string& fileName, imgsize_t leftMask, im
 void RawImage::save(const std::string& fileName) const
 {
     std::string format = String::tolower(String::right(fileName, 4));
-    if (format != ".dat") throw ImageException(VA_STR("unsupported write file format '" << format << "'"));
+    bool isDat = format == ".dat";
+    bool isPGM = format == ".pgm";
+    if (!isDat && !isPGM) throw ImageException(VA_STR("unsupported write file format '" << format << "'"));
     int fd = open(fileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0664);
-    if (fd < 0) throw ImageException(VA_STR("opening " << fileName << ": " << strerror(errno)));
-    auto bytes = write(fd, data, length);
-    bool success = bytes == decltype(bytes)(length);
-    if (close(fd)) success = false;
-    if (!success) throw ImageException(VA_STR("writing " << fileName << ": " << strerror(errno)));
+    if (fd < 0) throw ImageException(VA_STR("error opening " << fileName << ": " << strerror(errno)));
+    try
+    {
+        std::shared_ptr<const RawImage> toSave = shared_from_this();
+        if (isPGM)
+        {
+            std::string header = VA_STR("P5\n" << rowPixels << " " << colPixels << "\n65535\n");
+            auto bytes = write(fd, header.c_str(), header.length());
+            if (bytes != decltype(bytes)(header.length())) throw true;
+            try { toSave = RawImage::create(rowPixels, colPixels, 0, 0); } catch(...) { throw true; }
+            memcpy(toSave->data, data, length);
+            bitdepth_t* pixel = toSave->data;
+            for (imgsize_t px = 0; px < toSave->length; px++)
+            {
+                *pixel = toFileEndian(*pixel);
+                pixel++;
+            }
+        }
+        auto bytes = write(fd, toSave->data, toSave->length);
+        if (bytes != decltype(bytes)(toSave->length)) throw true;
+        if (close(fd)) throw false;
+    }
+    catch (bool& fdIsOpen)
+    {
+        std::string reason = VA_STR("writing " << fileName << ": " << strerror(errno));
+        if (fdIsOpen) close(fd);
+        throw ImageException(reason);
+    }
 }
