@@ -2,15 +2,19 @@ BUILD_DIR  := build
 CXXFLAGS   := -O3 -g3
 OUTFILE    := hraw
 
+CC         := g++
+
 SRC_DIR  := src
 INCLUDES :=
 CXXFLAGS += -std=c++11
 CXXFLAGS += -Wfloat-equal -Wconversion -Wsign-conversion -Wsign-promo -Wnon-virtual-dtor -Woverloaded-virtual -Wshadow -Wcast-qual
+#ifeq ($(CC),g++)
+#CXXFLAGS += -Wno-misleading-indentation
+#endif
 BINOUT   := $(BUILD_DIR)/$(OUTFILE)
 LIBS     :=
 SYSLIBS  := -lm
 
-CC            := g++
 CXXFLAGS      += -Wall -Wextra -pedantic -march=native
 SRC_SUBDIRS   := $(shell [ -d $(SRC_DIR) ] && find -L $(SRC_DIR) -type d -not \( -name .git -prune \) -not \( -name .svn -prune \))
 BUILD_SUBDIRS := $(patsubst $(SRC_DIR)%,$(BUILD_DIR)%,$(SRC_SUBDIRS))

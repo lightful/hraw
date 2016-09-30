@@ -43,13 +43,14 @@ class ImageMath
 
         struct Histogram
         {
+            typedef std::shared_ptr<Histogram> ptr;
             typedef std::map<bitdepth_t, imgsize_t> Frequencies;
             Frequencies data;
             uint64_t total;
             bitdepth_t mode; // statistical mode
         };
 
-        static Histogram buildHistogram(const ImageSelection::ptr& bitmap);
+        static Histogram::ptr buildHistogram(const ImageSelection::ptr& bitmap);
         static Stats1 analyze(const ImageSelection::ptr& bitmap);
         static Stats2 subtract(const ImageSelection::ptr& bitmapA, const ImageSelection::ptr& bitmapB);
 };

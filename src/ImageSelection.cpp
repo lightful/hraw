@@ -22,7 +22,7 @@
 #include "ImageSelection.h"
 
 ImageSelection::ImageSelection(
-    const std::shared_ptr<ImageChannel>& imageChannel,
+    const std::shared_ptr<const ImageChannel>& imageChannel,
     imgsize_t cx, imgsize_t cy,
     imgsize_t imageWidth, imgsize_t imageHeight
 ) : channel(imageChannel), x(cx), y(cy), width(imageWidth), height(imageHeight)
@@ -34,12 +34,12 @@ ImageSelection::ImageSelection(
 
     if ((uint64_t) x + width > channel->width()) throw ImageException
     (
-        VA_STR("out of range: X(" << x << ") + width(" << width << ") beyond " << channel->width())
+        VA_STR("out of range: X(" << x << ") by width(" << width << ") beyond " << channel->width())
     );
 
     if ((uint64_t) y + height > channel->height()) throw ImageException
     (
-        VA_STR("out of range: Y(" << y << ") + height(" << height << ") beyond " << channel->height())
+        VA_STR("out of range: Y(" << y << ") by height(" << height << ") beyond " << channel->height())
     );
 }
 
@@ -47,12 +47,12 @@ ImageSelection::ptr ImageSelection::select(imgsize_t cx, imgsize_t cy, imgsize_t
 {
     if ((uint64_t) cx + subSelWidth > width) throw ImageException
     (
-        VA_STR("out of range: X(" << cx << ") + width(" << subSelWidth << ") beyond " << width)
+        VA_STR("out of range: X(" << cx << ") by width(" << subSelWidth << ") beyond " << width)
     );
 
     if ((uint64_t) cy + subSelHeight > height) throw ImageException
     (
-        VA_STR("out of range: Y(" << cy << ") + height(" << subSelHeight << ") beyond " << height)
+        VA_STR("out of range: Y(" << cy << ") by height(" << subSelHeight << ") beyond " << height)
     );
 
     return ImageSelection::ptr(new ImageSelection(channel, x + cx, y + cy, subSelWidth, subSelHeight));
@@ -62,7 +62,7 @@ bitdepth_t& ImageSelection::pixel(imgsize_t cx, imgsize_t cy) const
 {
     if (cx >= width) throw ImageException(VA_STR("out of range: X(" << cx << ") beyond " << width - 1));
     if (cy >= height) throw ImageException(VA_STR("out of range: Y(" << cy << ") beyond " << height - 1));
-    const FilterPattern& bayer = channel->pattern;
+    const ImageFilter& bayer = channel->filter;
     auto offset = ((y + cy) * bayer.ydelta + bayer.yshift) * channel->raw->rowPixels +
                    (x + cx) * bayer.xdelta + ((y + cy) & 1? bayer.xshift_o : bayer.xshift_e);
     return channel->raw->data[channel->raw->bayerStart() + offset];
@@ -70,8 +70,8 @@ bitdepth_t& ImageSelection::pixel(imgsize_t cx, imgsize_t cy) const
 
 ImageSelection::Iterator::Iterator(const std::shared_ptr<ImageSelection>& imageSelection) : selection(imageSelection)
 {
-    const ImageChannel::ptr& image = selection->channel;
-    const FilterPattern& bayer = image->pattern;
+    auto& image = selection->channel;
+    const ImageFilter& bayer = image->filter;
 
     auto xshift = selection->y & 1? bayer.xshift_o : bayer.xshift_e;
     yskipShift = (selection->y & 1? bayer.xshift_e : bayer.xshift_o) - xshift;

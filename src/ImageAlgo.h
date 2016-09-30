@@ -19,6 +19,7 @@
 #ifndef IMAGEALGO_H_
 #define IMAGEALGO_H_
 
+#include <vector>
 #include <istream>
 #include "RawImage.h"
 #include "ImageMath.h"
@@ -43,9 +44,9 @@ class ImageAlgo
             std::shared_ptr<double> shiftEV; // imgAB EV shift for blending
         };
 
-        static Highlights getHighlights(const ImageMath::Histogram& histogram);
+        static void setBlackLevel(const RawImage::ptr& image, std::shared_ptr<std::vector<double>> blackPoints);
 
-        static ImageSelection::ptr getLeftMask(const RawImage::ptr& image, const FilterPattern& channel);
+        static Highlights getHighlights(const ImageMath::Histogram::ptr& histogram);
 
         static RawImage::ptr dprawProcess(const DPRAW& dpraw, DPRAW::Action action, DPRAW::ProcessMode processMode);
 };

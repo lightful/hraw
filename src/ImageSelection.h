@@ -42,11 +42,11 @@ class ImageSelection // virtualizes a image area selection within a channel
 
         typedef std::shared_ptr<ImageSelection> ptr;
 
-        explicit ImageSelection(const std::shared_ptr<class ImageChannel>& imageChannel,
+        explicit ImageSelection(const std::shared_ptr<const class ImageChannel>& imageChannel,
                                 imgsize_t cx, imgsize_t cy,
                                 imgsize_t imageWidth, imgsize_t imageHeight);
 
-        const std::shared_ptr<class ImageChannel> channel;
+        const std::shared_ptr<const class ImageChannel> channel;
 
         const imgsize_t x, y;
         const imgsize_t width, height;
@@ -82,9 +82,6 @@ class ImageSelection // virtualizes a image area selection within a channel
          */
         class Iterator
         {
-                Iterator& operator=(const Iterator&) = delete;
-                Iterator(const Iterator&) = delete;
-
             public:
 
                 explicit Iterator(const std::shared_ptr<ImageSelection>& imageSelection);
@@ -111,16 +108,21 @@ class ImageSelection // virtualizes a image area selection within a channel
 
                 inline bool operator++() // advances to the next pixel and returns false if there aren't more pixels
                 {
-                    next();
+                    if (operator bool()) next();
                     return operator bool();
                 }
 
-                template <typename Number> inline bitdepth_t operator=(Number pixelValue) // sets the current pixel value
+                template <typename Number> inline bitdepth_t operator=(Number pixelValue) const // sets current pixel value
                 {
                     if (!nextRow) throw ImageException("No pixel!");
                     bitdepth_t integerValue = (bitdepth_t) pixelValue; // no need to cast on client side
                     *rawData = integerValue;
                     return integerValue;
+                }
+
+                inline bitdepth_t operator=(const Iterator& that) const // sets current pixel value
+                {
+                    return operator=(that.operator bitdepth_t());
                 }
 
                 inline void next() // fast position update accounting for the Bayer geometry
@@ -143,6 +145,9 @@ class ImageSelection // virtualizes a image area selection within a channel
                     nextColumn = selection->width;
                     nextRow = selection->height;
                 }
+
+                inline imgsize_t column() const { return selection->width - nextColumn; } // current coordinates
+                inline imgsize_t row() const { return selection->height - nextRow; }
 
                 const std::shared_ptr<class ImageSelection> selection;
 

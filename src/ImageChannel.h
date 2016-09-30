@@ -23,26 +23,37 @@
 #include <ostream>
 #include "ImageSelection.h"
 
-struct FilterPattern // allows to represent any (simple) periodic pixel pattern
+struct ImageFilter // allows to represent any (simple) periodic pixel pattern
 {
-    imgsize_t xshift_e; // 0  1  0  1 (even rows)
-    imgsize_t xshift_o; // 0  1  0  1 (odd rows)
-    imgsize_t yshift;   // 0  0  1  1
-    imgsize_t xdelta;   // 2  2  2  2  <-- example for a RGGB matrix:
-    imgsize_t ydelta;   // 2  2  2  2                R  G1
-                        // R G1 G2  B                G2  B
+    enum class Code { R, G1, G2, B, G, RGB };
 
-    static FilterPattern RGGB_R()  { return FilterPattern { 0, 0, 0, 2, 2 };  }
-    static FilterPattern RGGB_G1() { return FilterPattern { 1, 1, 0, 2, 2 };  }
-    static FilterPattern RGGB_G2() { return FilterPattern { 0, 0, 1, 2, 2 };  }
-    static FilterPattern RGGB_G()  { return FilterPattern { 1, 0, 0, 2, 1 };  } // both green channels
-    static FilterPattern RGGB_B()  { return FilterPattern { 1, 1, 1, 2, 2 };  }
-    static FilterPattern FULL()    { return FilterPattern { 0, 0, 0, 1, 1 };  } // full plain image (all pixels)
+    const Code code;
+    const imgsize_t xshift_e; // 0  1  0  1 (even rows)
+    const imgsize_t xshift_o; // 0  1  0  1 (odd rows)
+    const imgsize_t yshift;   // 0  0  1  1
+    const imgsize_t xdelta;   // 2  2  2  2  <-- example for a RGGB matrix:
+    const imgsize_t ydelta;   // 2  2  2  2                R  G1
+                              // R G1 G2  B                G2  B
 
-    bool operator==(const FilterPattern& fp) const
+    static ImageFilter R()   { return ImageFilter { Code::R,   0, 0, 0, 2, 2 }; }
+    static ImageFilter G1()  { return ImageFilter { Code::G1,  1, 1, 0, 2, 2 }; }
+    static ImageFilter G2()  { return ImageFilter { Code::G2,  0, 0, 1, 2, 2 }; }
+    static ImageFilter G()   { return ImageFilter { Code::G,   1, 0, 0, 2, 1 }; } // both green channels
+    static ImageFilter B()   { return ImageFilter { Code::B,   1, 1, 1, 2, 2 }; }
+    static ImageFilter RGB() { return ImageFilter { Code::RGB, 0, 0, 0, 1, 1 }; } // full plain image (all pixels)
+
+    static ImageFilter create(Code code)
     {
-        return (xshift_e == fp.xshift_e) && (xshift_o == fp.xshift_o)
-            && (yshift == fp.yshift) && (xdelta == fp.xdelta) && (ydelta == fp.ydelta);
+        switch (code)
+        {
+            case Code::R:   return R();
+            case Code::G1:  return G1();
+            case Code::G2:  return G2();
+            case Code::G:   return G();
+            case Code::B:   return B();
+            case Code::RGB: return RGB();
+        }
+        throw;
     }
 };
 
@@ -55,29 +66,33 @@ class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtua
 
         typedef std::shared_ptr<ImageChannel> ptr;
 
-        explicit ImageChannel(const std::shared_ptr<class RawImage>& rawImage, const FilterPattern& filterPattern)
+        explicit ImageChannel(const std::shared_ptr<const class RawImage>& rawImage, const ImageFilter& imageFilter)
           : raw(rawImage),
-            pattern(filterPattern)
+            filter(imageFilter)
         {}
 
-        const std::shared_ptr<class RawImage> raw;
-        const FilterPattern pattern;
+        const std::shared_ptr<const class RawImage> raw;
+        const ImageFilter filter;
 
         imgsize_t width() const;
         imgsize_t height() const;
 
-        ImageSelection::ptr select() // full channel
+        double blackLevel() const;
+
+        ImageSelection::ptr select() const // full channel
         {
             return ImageSelection::ptr(new ImageSelection(shared_from_this(), 0, 0, width(), height()));
         }
 
-        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight)
+        ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const
         {
             return ImageSelection::ptr(new ImageSelection(shared_from_this(), cx, cy, selectedWidth, selectedHeight));
         }
+
+        ImageSelection::ptr getLeftMask(bool safetyCrop = true, bool overlappingTop = false) const;
 };
 
-std::ostream& operator<<(std::ostream& out, const FilterPattern& fp);
-std::istream& operator>>(std::istream& in, FilterPattern& fp);
+std::istream& operator>>(std::istream& in, ImageFilter::Code& fc);
+std::ostream& operator<<(std::ostream& out, const ImageFilter::Code& fc);
 
 #endif /* IMAGECHANNEL_H_ */

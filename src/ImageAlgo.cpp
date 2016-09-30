@@ -17,16 +17,17 @@
  */
 
 #include <cmath>
+#include <numeric>
 #include "Util.hpp"
 #include "ImageAlgo.h"
 
 struct ChannelIterators
 {
     ChannelIterators(const std::shared_ptr<class RawImage>& image)
-      : red(image->getChannel(FilterPattern::RGGB_R ())),
-        gr1(image->getChannel(FilterPattern::RGGB_G1())),
-        gr2(image->getChannel(FilterPattern::RGGB_G2())),
-        blu(image->getChannel(FilterPattern::RGGB_B ()))
+      : red(image->getChannel(ImageFilter::R ())),
+        gr1(image->getChannel(ImageFilter::G1())),
+        gr2(image->getChannel(ImageFilter::G2())),
+        blu(image->getChannel(ImageFilter::B ()))
     {}
 
     inline explicit operator bool() const // return false if no more pixels
@@ -48,25 +49,77 @@ struct ChannelIterators
     ImageSelection::Iterator blu;
 };
 
-ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram& histogram)
+struct ChannelBlacks
 {
-    if (histogram.data.empty()) throw ImageException("getHighlights: empty histogram");
+    ChannelBlacks(const ChannelIterators& rgb)
+      : red(rgb.red.selection->channel->blackLevel()),
+        gr1(rgb.gr1.selection->channel->blackLevel()),
+        gr2(rgb.gr2.selection->channel->blackLevel()),
+        blu(rgb.blu.selection->channel->blackLevel())
+    {}
+
+    const double red;
+    const double gr1;
+    const double gr2;
+    const double blu;
+};
+
+void ImageAlgo::setBlackLevel(const RawImage::ptr& image, std::shared_ptr<std::vector<double>> blackPoints)
+{
+    if (!blackPoints && image->masked.left) // if not externally supplied compute them from the masked pixels
+    {
+        blackPoints = std::make_shared<std::vector<double>>();
+        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::R())->getLeftMask()).mean);
+        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G1())->getLeftMask()).mean);
+        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G2())->getLeftMask()).mean);
+        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::B())->getLeftMask()).mean);
+    }
+
+    if (blackPoints && !blackPoints->empty())
+    {
+        auto& blacks = image->blackLevel;
+        blacks.clear();
+
+        if (blackPoints->size() == 4)
+        {
+            blacks.emplace(ImageFilter::Code::R,   blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::G1,  blackPoints->at(1));
+            blacks.emplace(ImageFilter::Code::G2,  blackPoints->at(2));
+            blacks.emplace(ImageFilter::Code::B,   blackPoints->at(3));
+            blacks.emplace(ImageFilter::Code::G,   (blackPoints->at(1) + blackPoints->at(2)) / 2);
+            blacks.emplace(ImageFilter::Code::RGB, std::accumulate(blackPoints->begin(), blackPoints->end(), 0.0) / 4);
+        }
+        else
+        {
+            blacks.emplace(ImageFilter::Code::R,   blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::G1,  blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::G2,  blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::B,   blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::G,   blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::RGB, blackPoints->at(0));
+        }
+    }
+}
+
+ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& histogram)
+{
+    if (histogram->data.empty()) throw ImageException("getHighlights: empty histogram");
     Highlights info { 0, 0 };
     info.clippedCount = 0;
-    uint64_t threshold = histogram.total / 10000;
-    for (auto ritf = histogram.data.crbegin(); ritf != histogram.data.crend(); ++ritf)
+    uint64_t threshold = histogram->total / 10000;
+    for (auto ritf = histogram->data.crbegin(); ritf != histogram->data.crend(); ++ritf)
     {
         info.clippedCount += ritf->second;
         if (ritf->second > threshold)
         {
             if (info.clippedCount - ritf->second < threshold / 10) // overexposed
             {
-                info.whiteLevel = ++ritf != histogram.data.rend()? ritf->first : 0;
+                info.whiteLevel = ++ritf != histogram->data.rend()? ritf->first : 0;
             }
             else
             {
                 info.clippedCount = 0;
-                while ((ritf != histogram.data.crbegin()) && ritf->second) ++ritf;
+                while ((ritf != histogram->data.crbegin()) && ritf->second) ++ritf;
                 if (!ritf->second) --ritf;
                 info.whiteLevel = ritf->first;
             }
@@ -76,64 +129,31 @@ ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram& histo
     return info;
 }
 
-ImageSelection::ptr ImageAlgo::getLeftMask(const RawImage::ptr& image, const FilterPattern& channel)
-{
-    if (!image->leftMask) throw ImageException("getLeftMask: image lacks a left mask");
-
-    ImageChannel::ptr layer = image->getChannel(channel);
-
-    imgsize_t factorh = channel.ydelta == 1? 1 : 2;
-    imgsize_t factorw = channel.xdelta == 1? 1 : 2;
-
-    ImageSelection::ptr leftMask = layer->select(0, image->topMask / factorh,
-                                                    image->leftMask / factorw,
-                                                    imgsize_t(layer->height() - image->topMask / factorh));
-
-    imgsize_t ofsmh = channel.ydelta == 1? 4 : 2; // safety borders
-    imgsize_t ofsmw = channel.xdelta == 1? 4 : 2;
-    if (ofsmh >= leftMask->height / 4) ofsmw = leftMask->height / 4;
-    if (ofsmw >= leftMask->width / 4) ofsmw = leftMask->width / 4;
-
-    return leftMask->select(ofsmw, ofsmh, leftMask->width - ofsmw*2, leftMask->height - ofsmh*2);
-}
-
 RawImage::ptr ImageAlgo::dprawProcess(const DPRAW& dpraw, DPRAW::Action action, DPRAW::ProcessMode processMode)
 {
     if (!dpraw.imgAB->sameSizeAs(dpraw.imgB))
         throw ImageException("dprawProcess: image and subimage size don't match");
 
-    if (!dpraw.imgAB->leftMask || !dpraw.imgB->leftMask)
-        throw ImageException("dprawProcess: required images with masked pixels to evaluate the black point");
-
-    auto blackAB_red = ImageMath::analyze(getLeftMask(dpraw.imgAB, FilterPattern::RGGB_R())).mean;
-    auto blackAB_gr1 = ImageMath::analyze(getLeftMask(dpraw.imgAB, FilterPattern::RGGB_G1())).mean;
-    auto blackAB_gr2 = ImageMath::analyze(getLeftMask(dpraw.imgAB, FilterPattern::RGGB_G2())).mean;
-    auto blackAB_blu = ImageMath::analyze(getLeftMask(dpraw.imgAB, FilterPattern::RGGB_B())).mean;
-
-    auto blackB_red = ImageMath::analyze(getLeftMask(dpraw.imgB, FilterPattern::RGGB_R())).mean;
-    auto blackB_gr1 = ImageMath::analyze(getLeftMask(dpraw.imgB, FilterPattern::RGGB_G1())).mean;
-    auto blackB_gr2 = ImageMath::analyze(getLeftMask(dpraw.imgB, FilterPattern::RGGB_G2())).mean;
-    auto blackB_blu = ImageMath::analyze(getLeftMask(dpraw.imgB, FilterPattern::RGGB_B())).mean;
-
-    auto newImage = RawImage::create(dpraw.imgAB);
+    auto newImage = RawImage::layout(dpraw.imgAB);
     ChannelIterators inAB(dpraw.imgAB);
     ChannelIterators inB(dpraw.imgB);
     ChannelIterators out(newImage);
+
+    ChannelBlacks blackAB(inAB);
+    ChannelBlacks blackB(inB);
 
     auto white = dpraw.white;
 
     if (action == DPRAW::Action::GetA) // compute the A subframe subtracting B from AB
     {
-        int black = int(0.5 + (blackAB_red + blackAB_gr1 + blackAB_gr2 + blackAB_blu) / 4); // similar target
-
         if (processMode == DPRAW::ProcessMode::Plain)
         {
             while (out)
             {
-                out.red = inAB.red >= white? inB.red : 0.5 + (inAB.red - blackAB_red) - (inB.red - blackB_red) + black;
-                out.gr1 = inAB.gr1 >= white? inB.gr1 : 0.5 + (inAB.gr1 - blackAB_gr1) - (inB.gr1 - blackB_gr1) + black;
-                out.gr2 = inAB.gr2 >= white? inB.gr2 : 0.5 + (inAB.gr2 - blackAB_gr2) - (inB.gr2 - blackB_gr2) + black;
-                out.blu = inAB.blu >= white? inB.blu : 0.5 + (inAB.blu - blackAB_blu) - (inB.blu - blackB_blu) + black;
+                out.red = inAB.red >= white? inB.red : 0.5 + (inAB.red - blackAB.red) - (inB.red - blackB.red) + blackB.red;
+                out.gr1 = inAB.gr1 >= white? inB.gr1 : 0.5 + (inAB.gr1 - blackAB.gr1) - (inB.gr1 - blackB.gr1) + blackB.gr1;
+                out.gr2 = inAB.gr2 >= white? inB.gr2 : 0.5 + (inAB.gr2 - blackAB.gr2) - (inB.gr2 - blackB.gr2) + blackB.gr2;
+                out.blu = inAB.blu >= white? inB.blu : 0.5 + (inAB.blu - blackAB.blu) - (inB.blu - blackB.blu) + blackB.blu;
                 out++;
                 inAB++;
                 inB++;
@@ -145,10 +165,10 @@ RawImage::ptr ImageAlgo::dprawProcess(const DPRAW& dpraw, DPRAW::Action action, 
             {
                 if ((inAB.red < white) && (inAB.gr1 < white) && (inAB.gr2 < white) && (inAB.blu < white))
                 {
-                    out.red = 0.5 + (inAB.red++ - blackAB_red) - (inB.red++ - blackB_red) + black;
-                    out.gr1 = 0.5 + (inAB.gr1++ - blackAB_gr1) - (inB.gr1++ - blackB_gr1) + black;
-                    out.gr2 = 0.5 + (inAB.gr2++ - blackAB_gr2) - (inB.gr2++ - blackB_gr2) + black;
-                    out.blu = 0.5 + (inAB.blu++ - blackAB_blu) - (inB.blu++ - blackB_blu) + black;
+                    out.red = 0.5 + (inAB.red++ - blackAB.red) - (inB.red++ - blackB.red) + blackB.red;
+                    out.gr1 = 0.5 + (inAB.gr1++ - blackAB.gr1) - (inB.gr1++ - blackB.gr1) + blackB.gr1;
+                    out.gr2 = 0.5 + (inAB.gr2++ - blackAB.gr2) - (inB.gr2++ - blackB.gr2) + blackB.gr2;
+                    out.blu = 0.5 + (inAB.blu++ - blackAB.blu) - (inB.blu++ - blackB.blu) + blackB.blu;
                     out++;
                 }
                 else // any channel overexposed
@@ -169,10 +189,10 @@ RawImage::ptr ImageAlgo::dprawProcess(const DPRAW& dpraw, DPRAW::Action action, 
         {
             while (out)
             {
-                out.red = inAB.red >= white? inB.red : 0.5 + (inAB.red - blackAB_red) * scale + blackB_red;
-                out.gr1 = inAB.gr1 >= white? inB.gr1 : 0.5 + (inAB.gr1 - blackAB_gr1) * scale + blackB_gr1;
-                out.gr2 = inAB.gr2 >= white? inB.gr2 : 0.5 + (inAB.gr2 - blackAB_gr2) * scale + blackB_gr2;
-                out.blu = inAB.blu >= white? inB.blu : 0.5 + (inAB.blu - blackAB_blu) * scale + blackB_blu;
+                out.red = inAB.red >= white? inB.red : 0.5 + (inAB.red - blackAB.red) * scale + blackB.red;
+                out.gr1 = inAB.gr1 >= white? inB.gr1 : 0.5 + (inAB.gr1 - blackAB.gr1) * scale + blackB.gr1;
+                out.gr2 = inAB.gr2 >= white? inB.gr2 : 0.5 + (inAB.gr2 - blackAB.gr2) * scale + blackB.gr2;
+                out.blu = inAB.blu >= white? inB.blu : 0.5 + (inAB.blu - blackAB.blu) * scale + blackB.blu;
                 out++;
                 inAB++;
                 inB++;
@@ -184,10 +204,10 @@ RawImage::ptr ImageAlgo::dprawProcess(const DPRAW& dpraw, DPRAW::Action action, 
             {
                 if ((inAB.red < white) && (inAB.gr1 < white) && (inAB.gr2 < white) && (inAB.blu < white))
                 {
-                    out.red = 0.5 + (inAB.red++ - blackAB_red) * scale + blackB_red;
-                    out.gr1 = 0.5 + (inAB.gr1++ - blackAB_gr1) * scale + blackB_gr1;
-                    out.gr2 = 0.5 + (inAB.gr2++ - blackAB_gr2) * scale + blackB_gr2;
-                    out.blu = 0.5 + (inAB.blu++ - blackAB_blu) * scale + blackB_blu;
+                    out.red = 0.5 + (inAB.red++ - blackAB.red) * scale + blackB.red;
+                    out.gr1 = 0.5 + (inAB.gr1++ - blackAB.gr1) * scale + blackB.gr1;
+                    out.gr2 = 0.5 + (inAB.gr2++ - blackAB.gr2) * scale + blackB.gr2;
+                    out.blu = 0.5 + (inAB.blu++ - blackAB.blu) * scale + blackB.blu;
                     out++;
                     inB++;
                 }

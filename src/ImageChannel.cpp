@@ -22,38 +22,72 @@
 
 imgsize_t ImageChannel::width() const
 {
-    return raw->bayerWidth() / pattern.xdelta;
+    return raw->bayerWidth() / filter.xdelta;
 }
 
 imgsize_t ImageChannel::height() const
 {
-    return raw->bayerHeight() / pattern.ydelta;
+    return raw->bayerHeight() / filter.ydelta;
 }
 
-std::ostream& operator<<(std::ostream& out, const FilterPattern& fp)
+double ImageChannel::blackLevel() const
 {
-    if      (fp == FilterPattern::RGGB_R())  return out << "R";
-    else if (fp == FilterPattern::RGGB_G1()) return out << "G1";
-    else if (fp == FilterPattern::RGGB_G2()) return out << "G2";
-    else if (fp == FilterPattern::RGGB_G())  return out << "G";
-    else if (fp == FilterPattern::RGGB_B())  return out << "B";
-    else if (fp == FilterPattern::FULL())    return out << "RGB";
-    else                                     return out << "?";
+    RawImage::BlackLevel::const_iterator fcode = raw->blackLevel.find(filter.code);
+    if (fcode != raw->blackLevel.cend()) return fcode->second;
+    throw ImageException("blackLevel not defined");
 }
 
-std::istream& operator>>(std::istream& in, FilterPattern& fp)
+ImageSelection::ptr ImageChannel::getLeftMask(bool safetyCrop, bool overlappingTop) const
+{
+    if (!raw->masked.left) throw ImageException("getLeftMask: image lacks a left mask");
+
+    imgsize_t factorh = filter.ydelta == 1? 1 : 2;
+    imgsize_t factorw = filter.xdelta == 1? 1 : 2;
+
+    imgsize_t cy = (overlappingTop? 0 : raw->masked.top) / factorh;
+    ImageSelection::ptr leftMask = select(0, cy, raw->masked.left / factorw, height() - cy);
+
+    if (!safetyCrop) return leftMask;
+
+    imgsize_t ofsmh = filter.ydelta == 1? 4 : 2; // safety borders
+    imgsize_t ofsmw = filter.xdelta == 1? 4 : 2;
+    if (ofsmh >= leftMask->height / 4) ofsmw = leftMask->height / 4;
+    if (ofsmw >= leftMask->width / 4) ofsmw = leftMask->width / 4;
+
+    return leftMask->select(ofsmw, ofsmh, leftMask->width - ofsmw*2, leftMask->height - ofsmh*2);
+}
+
+std::istream& operator>>(std::istream& in, ImageFilter::Code& fc)
 {
     std::string str;
     if (in >> str)
     {
         str = String::toupper(str);
-             if (!str.compare("R"))   fp = FilterPattern::RGGB_R();
-        else if (!str.compare("G1"))  fp = FilterPattern::RGGB_G1();
-        else if (!str.compare("G2"))  fp = FilterPattern::RGGB_G2();
-        else if (!str.compare("G"))   fp = FilterPattern::RGGB_G();
-        else if (!str.compare("B"))   fp = FilterPattern::RGGB_B();
-        else if (!str.compare("RGB")) fp = FilterPattern::FULL();
-        else in.setstate(std::ios_base::failbit);
+             if (!str.compare("R"))   fc = ImageFilter::Code::R;
+        else if (!str.compare("G1"))  fc = ImageFilter::Code::G1;
+        else if (!str.compare("G2"))  fc = ImageFilter::Code::G2;
+        else if (!str.compare("G"))   fc = ImageFilter::Code::G;
+        else if (!str.compare("B"))   fc = ImageFilter::Code::B;
+        else if (!str.compare("RGB")) fc = ImageFilter::Code::RGB;
+        else
+        {
+            fc = ImageFilter::Code::RGB;
+            in.setstate(std::ios_base::failbit);
+        }
     }
     return in;
+}
+
+std::ostream& operator<<(std::ostream& out, const ImageFilter::Code& fc)
+{
+    switch (fc)
+    {
+        case ImageFilter::Code::R:   return out << "R";
+        case ImageFilter::Code::G1:  return out << "G1";
+        case ImageFilter::Code::G2:  return out << "G2";
+        case ImageFilter::Code::G:   return out << "G";
+        case ImageFilter::Code::B:   return out << "B";
+        case ImageFilter::Code::RGB: return out << "RGB";
+    }
+    throw; // silent pointless gcc warning (potential undefined behaviour not originated here)
 }

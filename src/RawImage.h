@@ -19,6 +19,7 @@
 #ifndef RAWIMAGE_H_
 #define RAWIMAGE_H_
 
+#include <map>
 #include "ImageChannel.h"
 
 /* RawImage holds the RAW data on memory, safely sharing it with another objects.
@@ -28,11 +29,26 @@
  */
 class RawImage : public std::enable_shared_from_this<RawImage>
 {
-        explicit RawImage(imgsize_t width, imgsize_t height, imgsize_t widthMasked, imgsize_t heightMasked)
+    public:
+
+        typedef std::shared_ptr<RawImage> ptr;
+
+        struct Masked // masked pixels (optical black area)
+        {
+            typedef std::shared_ptr<Masked> ptr;
+            imgsize_t left;
+            imgsize_t top;
+        };
+
+        typedef std::map<ImageFilter::Code, double> BlackLevel;
+
+    private:
+
+        explicit RawImage(imgsize_t width, imgsize_t height, const Masked& opticalBlack)
           : length(imgsize_t(sizeof(bitdepth_t) * width * height)),
             data(new bitdepth_t[length]),
             rowPixels(width), colPixels(height),
-            leftMask(widthMasked < width? widthMasked : 0), topMask(heightMasked < height? heightMasked : 0)
+            masked { opticalBlack.left < width? opticalBlack.left : 0, opticalBlack.top < height? opticalBlack.top : 0 }
         {}
 
         RawImage& operator=(const RawImage&) = delete;
@@ -40,38 +56,36 @@ class RawImage : public std::enable_shared_from_this<RawImage>
 
     public:
 
-        typedef std::shared_ptr<RawImage> ptr;
-
         virtual ~RawImage() { if(data) delete []data; }
 
-        static RawImage::ptr create(imgsize_t width, imgsize_t height, imgsize_t leftMask, imgsize_t topMask)
+        static RawImage::ptr create(imgsize_t width, imgsize_t height, const RawImage::Masked& opticalBlack)
         {
-            return RawImage::ptr(new RawImage(width, height, leftMask, topMask));
+            return RawImage::ptr(new RawImage(width, height, opticalBlack));
         }
 
-        static RawImage::ptr create(const RawImage::ptr& config) // data allocated but not copied
+        static RawImage::ptr layout(const RawImage::ptr& config) // memory allocated but data not copied
         {
-            return create(config->rowPixels, config->colPixels, config->leftMask, config->topMask);
+            return create(config->rowPixels, config->colPixels, config->masked);
         }
 
-        static RawImage::ptr load(const std::string& fileName, imgsize_t leftMask = 0, imgsize_t topMask = 0);
+        static RawImage::ptr load(const std::string& fileName, const RawImage::Masked::ptr& opticalBlack = Masked::ptr());
 
         void save(const std::string& fileName) const;
 
-        ImageChannel::ptr getChannel(const FilterPattern& filterPattern)
+        ImageChannel::ptr getChannel(const ImageFilter& imageFilter) const
         {
-            return ImageChannel::ptr(new ImageChannel(shared_from_this(), filterPattern));
+            return ImageChannel::ptr(new ImageChannel(shared_from_this(), imageFilter));
         }
 
         bool sameSizeAs(const RawImage::ptr& that) const
         {
             return (rowPixels == that->rowPixels) && (colPixels == that->colPixels)
-                && (leftMask == that->leftMask) && (topMask == that->topMask);
+                && (masked.left == that->masked.left) && (masked.top == that->masked.top);
         }
 
         imgsize_t pixelCount(bool effective = true) const
         {
-            return (rowPixels - (effective? leftMask : 0)) * (colPixels - (effective? topMask : 0));
+            return (rowPixels - (effective? masked.left : 0)) * (colPixels - (effective? masked.top : 0));
         }
 
         inline imgsize_t bayerStart() const { return yalign() * rowPixels + xalign(); }
@@ -86,13 +100,18 @@ class RawImage : public std::enable_shared_from_this<RawImage>
         const imgsize_t rowPixels; // physical image dimensions
         const imgsize_t colPixels;
 
-        const imgsize_t leftMask; // masked pixels (optical black area)
-        const imgsize_t topMask;
+        const Masked masked;
+
+        BlackLevel blackLevel;
+
+        std::string name;
+
+        bool hasBlack() const { return !blackLevel.empty(); }
 
     private:
 
-        inline imgsize_t xalign() const { return leftMask & 1; } // pixels to skip from left & top (odd size in
-        inline imgsize_t yalign() const { return topMask & 1; }  // optical black area causing Bayer misalignment)
+        inline imgsize_t xalign() const { return masked.left & 1; } // pixels to skip from left & top (odd size in
+        inline imgsize_t yalign() const { return masked.top & 1; }  // optical black area causing Bayer misalignment)
 };
 
 #endif /* RAWIMAGE_H_ */

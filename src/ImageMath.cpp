@@ -19,21 +19,21 @@
 #include <cmath>
 #include "ImageMath.h"
 
-ImageMath::Histogram ImageMath::buildHistogram(const ImageSelection::ptr& bitmap)
+ImageMath::Histogram::ptr ImageMath::buildHistogram(const ImageSelection::ptr& bitmap)
 {
-    ImageMath::Histogram info;
+    auto info = std::make_shared<ImageMath::Histogram>();
     ImageSelection::Iterator pixel(bitmap);
-    while (pixel) ++info.data[pixel++];
-    info.total = 0;
-    info.mode = 0;
+    while (pixel) ++info->data[pixel++];
+    info->total = 0;
+    info->mode = 0;
     uint64_t modeFreq = 0;
-    for (auto i = info.data.cbegin(); i != info.data.cend(); ++i)
+    for (auto i = info->data.cbegin(); i != info->data.cend(); ++i)
     {
-        info.total += i->second;
+        info->total += i->second;
         if (i->second >= modeFreq)
         {
             modeFreq = i->second;
-            info.mode = i->first;
+            info->mode = i->first;
         }
     }
     return info;

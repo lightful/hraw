@@ -35,8 +35,7 @@ template <typename T> T toFileEndian(T number);
 template <> uint16_t toFileEndian(uint16_t number)  { return htons(number); }
 template <> uint32_t toFileEndian(uint32_t number)  { return htonl(number); }
 
-RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& header,
-                      imgsize_t leftMask, imgsize_t topMask)
+RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& header, const RawImage::Masked& opticalBlack)
 {
     uint64_t ww, hh;
     header >> ww;
@@ -56,7 +55,10 @@ RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& h
         throw ImageException(VA_STR(fileName << " not a 16-bit PGM file"));
     }
 
-    auto image = RawImage::create(width, height, leftMask, topMask);
+    auto image = RawImage::create(width, height, opticalBlack);
+
+    auto pd = fileName.find_last_of("\\/");
+    image->name = fileName.substr((pd == std::string::npos)? 0 : pd + 1);
 
     uint8_t delim;
     header.read((char *) &delim, 1);
@@ -77,7 +79,7 @@ RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& h
     return image;
 }
 
-RawImage::ptr RawImage::load(const std::string& fileName, imgsize_t leftMask, imgsize_t topMask) // from any supported file
+RawImage::ptr RawImage::load(const std::string& fileName, const Masked::ptr& opticalBlack) // from any supported file
 {
     int fd = open(fileName.c_str(), O_RDONLY);
     if (fd < 0) throw ImageException(VA_STR("opening " << fileName << ": " << strerror(errno)));
@@ -100,7 +102,7 @@ RawImage::ptr RawImage::load(const std::string& fileName, imgsize_t leftMask, im
         throw ImageException(VA_STR(fileName << " seems not to be a valid PGM file"));
     }
 
-    return loadPGM(fileName, fd, header, leftMask, topMask);
+    return loadPGM(fileName, fd, header, opticalBlack? *opticalBlack : RawImage::Masked { 0, 0 });
 }
 
 void RawImage::save(const std::string& fileName) const
@@ -119,7 +121,7 @@ void RawImage::save(const std::string& fileName) const
             std::string header = VA_STR("P5\n" << rowPixels << " " << colPixels << "\n65535\n");
             auto bytes = write(fd, header.c_str(), header.length());
             if (bytes != decltype(bytes)(header.length())) throw true;
-            try { toSave = RawImage::create(rowPixels, colPixels, 0, 0); } catch(...) { throw true; }
+            try { toSave = RawImage::create(rowPixels, colPixels, masked); } catch(...) { throw true; }
             memcpy(toSave->data, data, length);
             bitdepth_t* pixel = toSave->data;
             for (imgsize_t px = 0; px < toSave->length; px++)
