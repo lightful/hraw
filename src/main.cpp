@@ -135,6 +135,8 @@ struct ExitNotif { std::string errMsg; };
 
 struct Crop { imgsize_t cx, cy, width, height; };
 
+struct Loop { int deltaX, deltaY, count; };
+
 template <typename T, typename Iter> struct IterationKit
 {
     T object;
@@ -209,6 +211,60 @@ void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw, cons
     if (iso) std::cerr << iso << ";" << dr8 << std::endl; // useful for a CSV file
 }
 
+void rgbStats2csv(const RawImage::ptr& raw, // must include the masked pixels
+                  imgsize_t cx, imgsize_t cy, // image coordinates for the crop
+                  imgsize_t width, imgsize_t height, // from 1 (actually 4 RGGB) pixel to the entire image
+                  int deltaX, int deltaY, // movement in each axis
+                  int count) // iterations count (less than 2: no movement)
+{
+    std::string csvpad = std::string(std::size_t((count > 1? 1 : 13) + (deltaX? 1 : 0) + (deltaY? 1 : 0)), ';');
+    std::cout << "width;height;X;Y" << csvpad << std::endl
+              << width << ";" << height << ";" << cx << ";" << cy << csvpad << std::endl << std::endl;
+
+    if (count > 1)
+        std::cout << (deltaX? "X;" : "") << (deltaY? "Y;" : "") << "R;G1;G2;B;" << std::endl; // only mean reported
+    else
+        std::cout << "R mean;R min;R max;R stdev;G1 mean;G1 min;G1 max;G1 stdev;"
+                     "G2 mean;G2 min;G2 max;G2 stdev;B mean;B min;B max;B stdev;" << std::endl; // full stats
+
+    ImageChannel::ptr red = raw->getChannel(ImageFilter::R());
+    ImageChannel::ptr gr1 = raw->getChannel(ImageFilter::G1());
+    ImageChannel::ptr gr2 = raw->getChannel(ImageFilter::G2());
+    ImageChannel::ptr blu = raw->getChannel(ImageFilter::B());
+
+    auto black_red = raw->hasBlack()? red->blackLevel() : 0;
+    auto black_gr1 = raw->hasBlack()? gr1->blackLevel() : 0;
+    auto black_gr2 = raw->hasBlack()? gr2->blackLevel() : 0;
+    auto black_blu = raw->hasBlack()? blu->blackLevel() : 0;
+
+    for (int iter = count; iter > 0; iter--)
+    {
+        ImageSelection::ptr area = red->select(cx, cy, width, height);
+        auto stats = ImageMath::analyze(area);
+        if (deltaX) std::cout << cx << ";";
+        if (deltaY) std::cout << cy << ";";
+        std::cout << stats.mean - black_red;
+        if (count < 2) std::cout << ";" << stats.min - black_red << ";" << stats.max - black_red << ";" << stats.stdev;
+        area = gr1->select(cx, cy, width, height);
+        stats = ImageMath::analyze(area);
+        std::cout << ";" << stats.mean - black_gr1;
+        if (count < 2) std::cout << ";" << stats.min - black_gr1 << ";" << stats.max - black_gr1 << ";" << stats.stdev;
+        area = gr2->select(cx, cy, width, height);
+        stats = ImageMath::analyze(area);
+        std::cout << ";" << stats.mean - black_gr2;
+        if (count < 2) std::cout << ";" << stats.min - black_gr2 << ";" << stats.max - black_gr2 << ";" << stats.stdev;
+        area = blu->select(cx, cy, width, height);
+        stats = ImageMath::analyze(area);
+        std::cout << ";" << stats.mean - black_blu;
+        if (count < 2) std::cout << ";" << stats.min - black_blu << ";" << stats.max - black_blu << ";" << stats.stdev;
+        std::cout << ";" << std::endl;
+        cx += imgsize_t(deltaX);
+        cy += imgsize_t(deltaY);
+    }
+
+    std::cout << std::endl << std::endl;
+}
+
 int main(int argc, char **argv)
 {
     try
@@ -228,6 +284,7 @@ int main(int argc, char **argv)
         std::shared_ptr<double> ev;
         int iso = 0;
         std::shared_ptr<Crop> crop;
+        std::shared_ptr<Loop> loop;
 
         if (command == "dpraw")
         {
@@ -302,12 +359,20 @@ int main(int argc, char **argv)
             }
             else if (argname == "-crop")
             {
-                if (argument + 4 >= argc) throw ExitNotif { "-crop requires: width height cx cy" };
+                if (argument + 4 >= argc) throw ExitNotif { "-crop requires: cx cy width height" };
                 crop = std::make_shared<Crop>();
                 std::stringstream(argv[++argument]) >> crop->cx;
                 std::stringstream(argv[++argument]) >> crop->cy;
                 std::stringstream(argv[++argument]) >> crop->width;
                 std::stringstream(argv[++argument]) >> crop->height;
+            }
+            else if (argname == "-loop")
+            {
+                if (argument + 2 >= argc) throw ExitNotif { "-loop requires deltaX, deltaY and count numbers" };
+                loop = std::make_shared<Loop>();
+                std::stringstream(argv[++argument]) >> loop->deltaX;
+                std::stringstream(argv[++argument]) >> loop->deltaY;
+                std::stringstream(argv[++argument]) >> loop->count;
             }
             else
             {
@@ -329,6 +394,15 @@ int main(int argc, char **argv)
             if (!opticalBlack) throw ExitNotif { "left and top mask must be specified" };
             auto raw = RawImage::load(infile1, opticalBlack);
             analyze(iso, *channel, raw, whitePoint);
+        }
+        else if (command == "rgbstats")
+        {
+            if (infile1.empty()) throw ExitNotif { "missing input file" };
+            if (!crop) throw ExitNotif { "-crop must be provided" };
+            RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
+            ImageAlgo::setBlackLevel(raw, blackPoints);
+            rgbStats2csv(raw, crop->cx, crop->cy, crop->width, crop->height,
+                         loop? loop->deltaX : 0, loop? loop->deltaY : 0, loop? loop->count : 1);
         }
         else if (command == "dpraw")
         {
@@ -362,6 +436,7 @@ int main(int argc, char **argv)
             << "    Commands:" << std::endl
             << "      histogram -i [-m] [-b] [-crop]" << std::endl
             << "      analyze   -i -c -m [-w] [-iso]" << std::endl
+            << "      rgbstats  -i [-m] [-b] -crop [-loop]" << std::endl
             << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o [-m|-b] -w [-ev]" << std::endl
             << std::endl
             << "    Arguments:" << std::endl
@@ -374,7 +449,8 @@ int main(int argc, char **argv)
             << "      -c R|G1|G2|G|B|RGB         color filter selection" << std::endl
             << "      -ev EV                     exposure adjust (positive or negative)" << std::endl
             << "      -iso ISO                   ISO speed" << std::endl
-            << "      -crop width height cx cy   rectangle selection bayer coordinates (half width & height)" << std::endl
+            << "      -crop cx cy width height   rectangle selection bayer coordinates (half width & height)" << std::endl
+            << "      -loop deltaX deltaY count  multiline output moving the selection" << std::endl
             << std::endl
             << "    PGM files previously generated from camera raw files with dcraw:" << std::endl
             << "      dcraw -E -4 -j -t 0 -s all  (with masked pixels)" << std::endl
