@@ -1,6 +1,6 @@
 /*
  *  HRAW - Hacker's toolkit for image sensor characterisation
- *  Copyright 2016 Ciriaco Garcia de Celis
+ *  Copyright 2016-2018 Ciriaco Garcia de Celis
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ class ImageAlgo
             const RawImage::ptr imgB;
             enum class Action { GetA, Blend };
             enum class ProcessMode { Plain, Bayer };
-            int white;
+            bitdepth_t white;
             std::shared_ptr<double> shiftEV; // imgAB EV shift for blending
         };
 

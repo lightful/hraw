@@ -1,6 +1,6 @@
 /*
  *  HRAW - Hacker's toolkit for image sensor characterisation
- *  Copyright 2016 Ciriaco Garcia de Celis
+ *  Copyright 2016-2018 Ciriaco Garcia de Celis
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -143,7 +143,7 @@ template <typename T, typename Iter> struct IterationKit
     Iter cur, last;
 };
 
-void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop)
+void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop, const std::shared_ptr<bitdepth_t>& wclip)
 {
     typedef IterationKit<ImageMath::Histogram::ptr, ImageMath::Histogram::Frequencies::const_iterator> HistoIter;
     std::vector<HistoIter> histoIter;
@@ -155,6 +155,18 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop
         auto area = crop? channel->select(crop->cx, crop->cy, crop->width, crop->height) : channel->select();
         sumBlack += image->hasBlack()? channel->blackLevel() : 0;
         auto histogram = ImageMath::buildHistogram(area);
+        if (wclip && !histogram->data.empty())
+        {
+            auto it = histogram->data.cbegin();
+            auto itnext = ++it;
+            while (itnext != histogram->data.cend()) // "smooth" the scaling if white clipping provided
+            {
+                if ((itnext->first - it->first == 2) && (!wclip || (itnext->first < *wclip)))
+                    histogram->data.emplace(it->first + 1, (it->second + itnext->second) / 2);
+                it = itnext;
+                ++itnext;
+            }
+        }
         histoIter.emplace_back(HistoIter { histogram, histogram->data.cbegin(), histogram->data.cend() });
         std::cout << ";" << filter.code;
     };
@@ -165,31 +177,56 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop
     appendHistogram(ImageFilter::B());
     std::cout << std::endl;
 
-    bitdepth_t blackLevel = bitdepth_t(sumBlack / double(histoIter.size()));
+    bitdepth_t blackLevel = bitdepth_t(0.5 + sumBlack / double(histoIter.size()));
 
     int64_t val = std::numeric_limits<int64_t>::max();
     for (const auto& i : histoIter) if (i.cur->first < val) val = i.cur->first; // starting point
 
+    std::stringstream line;
     for (bool isEof = false; !isEof;)
     {
-        std::cout << (val - blackLevel);
+        line.str(std::string());
         isEof = true;
         for (auto i = histoIter.begin(); i != histoIter.end(); ++i)
         {
-            if ((i->cur == i->last) || (val < i->cur->first)) std::cout << ";0";
+            if ((i->cur == i->last) || (val < i->cur->first)) line << ";0";
             else
             {
-                std::cout << ";" << i->cur->second;
+                line << ";" << i->cur->second;
                 ++i->cur;
             }
+            if (wclip && (*wclip == val)) i->last = i->cur;
             if (i->cur != i->last) isEof = false;
         }
-        std::cout << std::endl;
+        if (isEof && wclip) break;
+        std::cout << (val - blackLevel) << line.str() << std::endl;
         val++;
+    }
+
+    if (wclip) // make overexposed area more "readable" if white clipping provided
+    {
+        auto overexp = val;
+        val -= blackLevel;
+        int zleft = 0;
+        int zright = int(histoIter.size() - 1);
+        for (auto i = histoIter.begin(); i != histoIter.end(); ++i)
+        {
+            line.str(std::string());
+            for (auto c = 0; c < zleft; c++) line << ";0";
+            auto expmax = i->last;
+            --expmax;
+            line << ";" << (expmax->first == overexp? expmax->second : 0);
+            for (auto c = 0; c < zright; c++) line << ";0";
+            int bwidth = int(double(val) * 0.02);
+            for (auto right = val + bwidth; val < right; val++) std::cout << val << ";0;0;0;0" << std::endl;
+            for (auto right = val + bwidth; val < right; val += 2)
+                std::cout << val << line.str() << std::endl << (val + 1) << ";0;0;0;0" << std::endl;
+            zleft++; zright--;
+        }
     }
 }
 
-void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw, const std::shared_ptr<int>& whitePoint)
+void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw, const std::shared_ptr<bitdepth_t>& whitePoint)
 {
     ImageChannel::ptr channel = raw->getChannel(analyzeChannel);
     ImageSelection::ptr maskedPixels = channel->getLeftMask();
@@ -279,7 +316,7 @@ int main(int argc, char **argv)
         RawImage::Masked::ptr opticalBlack;
         std::string outfile;
         std::shared_ptr<std::vector<double>> blackPoints;
-        std::shared_ptr<int> whitePoint;
+        std::shared_ptr<bitdepth_t> whitePoint;
         std::shared_ptr<ImageFilter> channel;
         std::shared_ptr<double> ev;
         int iso = 0;
@@ -335,7 +372,7 @@ int main(int argc, char **argv)
             else if (argname == "-w")
             {
                 if (argument + 1 >= argc) throw ExitNotif { "-w requires a integer white point" };
-                whitePoint = std::make_shared<int>();
+                whitePoint = std::make_shared<bitdepth_t>();
                 std::stringstream(argv[++argument]) >> *whitePoint;
             }
             else if (argname == "-c")
@@ -385,7 +422,7 @@ int main(int argc, char **argv)
             if (infile1.empty()) throw ExitNotif { "missing input file" };
             RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
             ImageAlgo::setBlackLevel(raw, blackPoints);
-            histogram2csv(raw, crop);
+            histogram2csv(raw, crop, whitePoint);
         }
         else if (command == "analyze")
         {
@@ -431,13 +468,13 @@ int main(int argc, char **argv)
             std::cout
             << std::endl
             << "  HRAW v1.0 - Hacker's open source toolkit for image sensor characterisation" << std::endl
-            << "              (c) 2016 Ciriaco Garcia de Celis" << std::endl
+            << "              (c) 2016-2018 Ciriaco Garcia de Celis" << std::endl
             << std::endl
             << "    Commands:" << std::endl
-            << "      histogram -i [-m] [-b] [-crop]" << std::endl
+            << "      histogram -i [-m] [-b] [-crop] [-w]" << std::endl
             << "      analyze   -i -c -m [-w] [-iso]" << std::endl
             << "      rgbstats  -i [-m] [-b] -crop [-loop]" << std::endl
-            << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o [-m|-b] -w [-ev]" << std::endl
+            << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o -m|-b -w [-ev]" << std::endl
             << std::endl
             << "    Arguments:" << std::endl
             << "      -i fileName.pgm            single input file" << std::endl
