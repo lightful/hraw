@@ -1,6 +1,6 @@
 /*
  *  HRAW - Hacker's toolkit for image sensor characterisation
- *  Copyright 2016 Ciriaco Garcia de Celis
+ *  Copyright 2016-2018 Ciriaco Garcia de Celis
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -99,6 +99,11 @@ void ImageAlgo::setBlackLevel(const RawImage::ptr& image, std::shared_ptr<std::v
             blacks.emplace(ImageFilter::Code::RGB, blackPoints->at(0));
         }
     }
+}
+
+void ImageAlgo::setWhiteLevel(const RawImage::ptr& image, std::shared_ptr<bitdepth_t> whitePoint)
+{
+    image->whiteLevel = whitePoint;
 }
 
 ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& histogram)

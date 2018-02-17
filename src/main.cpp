@@ -143,17 +143,18 @@ template <typename T, typename Iter> struct IterationKit
     Iter cur, last;
 };
 
-void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop, const std::shared_ptr<bitdepth_t>& wclip)
+void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>& crop)
 {
     typedef IterationKit<ImageMath::Histogram::ptr, ImageMath::Histogram::Frequencies::const_iterator> HistoIter;
     std::vector<HistoIter> histoIter;
     double sumBlack = 0;
+    auto wclip = image->whiteLevel; // note: when this parameter is provided a *FAKE* histogram is generated
 
     auto appendHistogram = [&](const ImageFilter& filter)
     {
         auto channel = image->getChannel(filter);
         auto area = crop? channel->select(crop->cx, crop->cy, crop->width, crop->height) : channel->select();
-        sumBlack += image->hasBlack()? channel->blackLevel() : 0;
+        sumBlack += image->hasBlackLevel()? channel->blackLevel() : 0;
         auto histogram = ImageMath::buildHistogram(area);
         if (wclip && !histogram->data.empty())
         {
@@ -226,13 +227,14 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<Crop>& crop
     }
 }
 
-void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw, const std::shared_ptr<bitdepth_t>& whitePoint)
+void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw)
 {
     ImageChannel::ptr channel = raw->getChannel(analyzeChannel);
     ImageSelection::ptr maskedPixels = channel->getLeftMask();
     auto stMasked = ImageMath::analyze(maskedPixels);
     ImageSelection::ptr image = channel->select();
     auto stImage = ImageMath::analyze(image);
+    auto whitePoint = raw->whiteLevel;
     double dr = log((1.0 * (whitePoint? *whitePoint : stImage.max) - stMasked.mean) / stMasked.stdev) / log(2);
     double mp = raw->pixelCount() / 1000000.0;
     double dr8 = dr + log(sqrt(mp/8)) / log(2);
@@ -269,10 +271,10 @@ void rgbStats2csv(const RawImage::ptr& raw, // must include the masked pixels
     ImageChannel::ptr gr2 = raw->getChannel(ImageFilter::G2());
     ImageChannel::ptr blu = raw->getChannel(ImageFilter::B());
 
-    auto black_red = raw->hasBlack()? red->blackLevel() : 0;
-    auto black_gr1 = raw->hasBlack()? gr1->blackLevel() : 0;
-    auto black_gr2 = raw->hasBlack()? gr2->blackLevel() : 0;
-    auto black_blu = raw->hasBlack()? blu->blackLevel() : 0;
+    auto black_red = raw->hasBlackLevel()? red->blackLevel() : 0;
+    auto black_gr1 = raw->hasBlackLevel()? gr1->blackLevel() : 0;
+    auto black_gr2 = raw->hasBlackLevel()? gr2->blackLevel() : 0;
+    auto black_blu = raw->hasBlackLevel()? blu->blackLevel() : 0;
 
     for (int iter = count; iter > 0; iter--)
     {
@@ -422,7 +424,8 @@ int main(int argc, char **argv)
             if (infile1.empty()) throw ExitNotif { "missing input file" };
             RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
             ImageAlgo::setBlackLevel(raw, blackPoints);
-            histogram2csv(raw, crop, whitePoint);
+            ImageAlgo::setWhiteLevel(raw, whitePoint);
+            histogram2csv(raw, crop);
         }
         else if (command == "analyze")
         {
@@ -430,7 +433,8 @@ int main(int argc, char **argv)
             if (!channel) throw ExitNotif { "image channel must be specified" };
             if (!opticalBlack) throw ExitNotif { "left and top mask must be specified" };
             auto raw = RawImage::load(infile1, opticalBlack);
-            analyze(iso, *channel, raw, whitePoint);
+            ImageAlgo::setWhiteLevel(raw, whitePoint);
+            analyze(raw, *channel);
         }
         else if (command == "rgbstats")
         {

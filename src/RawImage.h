@@ -103,10 +103,11 @@ class RawImage : public std::enable_shared_from_this<RawImage>
         const Masked masked;
 
         BlackLevel blackLevel;
+        std::shared_ptr<bitdepth_t> whiteLevel;
 
         std::string name;
 
-        bool hasBlack() const { return !blackLevel.empty(); }
+        bool hasBlackLevel() const { return !blackLevel.empty(); }
 
     private:
 
