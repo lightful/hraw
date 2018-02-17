@@ -49,6 +49,8 @@ class ImageAlgo
 
         static Highlights getHighlights(const ImageMath::Histogram::ptr& histogram);
 
+        static RawImage::ptr zebras(const RawImage::ptr& input);
+
         static RawImage::ptr dprawProcess(const DPRAW& dpraw, DPRAW::Action action, DPRAW::ProcessMode processMode);
 };
 

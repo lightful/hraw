@@ -433,6 +433,23 @@ int main(int argc, char **argv)
             ImageAlgo::setWhiteLevel(raw, whitePoint);
             histogram2csv(raw, crop);
         }
+        else if (command == "zebras")
+        {
+            if (infile1.empty()) throw ExitNotif{ "missing input file" };
+            if (outfile.empty())
+            {
+                auto ep = infile1.find_last_of(".");
+                if (ep == std::string::npos) ep = infile1.length();
+                outfile = infile1.substr(0, ep) + ".tiff";
+            }
+            if (!whitePoint) throw ExitNotif{ "missing white point" };
+            RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
+            ImageAlgo::setBlackLevel(raw, blackPoints);
+            if (!raw->hasBlackLevel()) throw ExitNotif{ "missing black point(s)" };
+            ImageAlgo::setWhiteLevel(raw, whitePoint);
+            RawImage::ptr result = ImageAlgo::zebras(raw);
+            result->save(outfile);
+        }
         else if (command == "analyze")
         {
             if (infile1.empty()) throw ExitNotif { "missing input file" };
@@ -475,7 +492,7 @@ int main(int argc, char **argv)
         {
             std::cout
             << std::endl
-            << "  HRAW v1.0 - Hacker's open source toolkit for image sensor characterisation" << std::endl
+            << "  HRAW v1.1 - Hacker's open source toolkit for image sensor characterisation" << std::endl
             << "              (c) 2016-2018 Ciriaco Garcia de Celis" << std::endl
             << std::endl
             << "    Commands:" << std::endl
@@ -483,23 +500,24 @@ int main(int argc, char **argv)
             << "      analyze   -i -c -m [-w] [-iso]" << std::endl
             << "      rgbstats  -i [-m] [-b] -crop [-loop]" << std::endl
             << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o -m|-b -w [-ev]" << std::endl
+            << "      zebras    -i -b|-m -w [-o(tiff/ppm)]" << std::endl
             << std::endl
             << "    Arguments:" << std::endl
             << "      -i fileName.pgm            single input file" << std::endl
             << "      -i2 file1.pgm file2.pgm    two input files" << std::endl
             << "      -m leftMask topMask        masked pixels count (optical black area)" << std::endl
-            << "      -o fileName.dat            output file (.dat and .pgm supported)" << std::endl
+            << "      -o fileName.ext            output file (.dat .pgm .ppm or .tiff depending on command)" << std::endl
             << "      -b blackPoint(s)           a single floating point number or 4 (one for each channel)" << std::endl
-            << "      -w whitePoint              integer number" << std::endl
+            << "      -w whitePoint              integer number (black point not substracted)" << std::endl
             << "      -c R|G1|G2|G|B|RGB         color filter selection" << std::endl
             << "      -ev EV                     exposure adjust (positive or negative)" << std::endl
             << "      -iso ISO                   ISO speed" << std::endl
             << "      -crop cx cy width height   rectangle selection bayer coordinates (half width & height)" << std::endl
             << "      -loop deltaX deltaY count  multiline output moving the selection" << std::endl
             << std::endl
-            << "    PGM files previously generated from camera raw files with dcraw:" << std::endl
-            << "      dcraw -E -4 -j -t 0 -s all  (with masked pixels)" << std::endl
-            << "      dcraw -D -4 -j -t 0 -s all  (rest of uses)" << std::endl
+            << "    Input PGM files previously generated from camera raw files with dcraw:" << std::endl
+            << "      dcraw -D -4 -j -t 0 -s all  (plain non demosaiced raw image data)" << std::endl
+            << "      dcraw -E -4 -j -t 0 -s all  (request including the masked pixels for the -m option)" << std::endl
             << std::endl
             << "    dpraw's output image can also be piped to dcraw to be decoded:" << std::endl
             << "      cat fileName.dat | dcraw -k black -S white -W -w -v -I -c rawFile.cr2 > image.ppm" << std::endl

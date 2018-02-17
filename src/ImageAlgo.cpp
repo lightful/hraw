@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <numeric>
+#include <array>
 #include "Util.hpp"
 #include "ImageAlgo.h"
 
@@ -133,6 +134,68 @@ ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& 
         }
     }
     return info;
+}
+
+RawImage::ptr ImageAlgo::zebras(const RawImage::ptr& input) // assumed RGGB bayer geometry
+{
+    ChannelBlacks black(input);
+    double avgBlackLevel = (black.red + black.gr1 + black.gr2 + black.blu) / 4;
+    bitdepth_t blackLevel = bitdepth_t(std::round(avgBlackLevel));
+    bitdepth_t whiteLevel = *input->whiteLevel;
+    ChannelIterators in(input, true);
+
+    imgsize_t outputWidth = (input->rowPixels / 2 - input->masked.left) * 3;
+    imgsize_t outputHeight = input->colPixels / 2 - input->masked.top;
+    RawImage::ptr copy = RawImage::create(outputWidth, outputHeight, RawImage::Masked{ 0, 0 });
+    ImageChannel::ptr plain = copy->getChannel(ImageFilter::RGB());
+    ImageSelection::ptr full = plain->select();
+    ImageSelection::Iterator out(full);
+
+    bitdepth_t czebra = 65535; // 16-bit output
+    double maxWhite = whiteLevel - avgBlackLevel;
+    double brightnessAdjust = pow(2, log(czebra)/log(2) - 0.5) / maxWhite; // separate non clipped data 0.5EV from zebras
+
+    auto gamma = [&maxWhite](double adu) -> double { return pow(adu / maxWhite, 1/2.2) * maxWhite; };
+
+    auto glut = std::make_shared<std::array<double, 16384>>(); // fast lookup cache for the usual 14-bit ADC data
+    auto& fastgamma = *glut;
+    for (bitdepth_t adu = 0; adu < fastgamma.size(); adu++) fastgamma[adu] = gamma(adu);
+
+    while (out)
+    {
+        bitdepth_t red = in.red++;
+        bitdepth_t gr1 = in.gr1++;
+        bitdepth_t gr2 = in.gr2++;
+        bitdepth_t blu = in.blu++;
+
+        if ((red >= whiteLevel) || (gr1 >= whiteLevel) || (gr2 >= whiteLevel) || (blu >= whiteLevel)) // any burnt subpixel?
+        {
+            red = red >= whiteLevel? czebra : 0;
+            gr1 = (gr1 >= whiteLevel) || (gr2 >= whiteLevel)? czebra : 0;
+            blu = blu >= whiteLevel? czebra : 0;
+        }
+        else // cheap demosaicing (a quarter of the original resolution)
+        {
+            red = bitdepth_t(red > blackLevel ? red - blackLevel : 0); // beware of negative noise in the shadows
+            gr1 = bitdepth_t(gr1 > blackLevel ? gr1 - blackLevel : 0);
+            gr2 = bitdepth_t(gr2 > blackLevel ? gr2 - blackLevel : 0);
+            blu = bitdepth_t(blu > blackLevel ? blu - blackLevel : 0);
+            double bw = 0.299 * red + 0.587 * (gr1 + gr2) / 2 + 0.114 * blu; // convert to B&W
+            bitdepth_t adu = bitdepth_t(bw);
+            bw = adu < fastgamma.size()? fastgamma[adu] : gamma(bw); // gamma correction
+            bw = bw * brightnessAdjust;
+            red = gr1 = blu = bitdepth_t(bw);
+        }
+
+        out = red;
+        out++;
+        out = gr1;
+        out++;
+        out = blu;
+        out++;
+    }
+
+    return copy;
 }
 
 RawImage::ptr ImageAlgo::dprawProcess(const DPRAW& dpraw, DPRAW::Action action, DPRAW::ProcessMode processMode)
