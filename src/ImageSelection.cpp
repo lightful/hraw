@@ -21,11 +21,8 @@
 #include "ImageChannel.h"
 #include "ImageSelection.h"
 
-ImageSelection::ImageSelection(
-    const std::shared_ptr<const ImageChannel>& imageChannel,
-    imgsize_t cx, imgsize_t cy,
-    imgsize_t imageWidth, imgsize_t imageHeight
-) : channel(imageChannel), x(cx), y(cy), width(imageWidth), height(imageHeight)
+ImageSelection::ImageSelection(const std::shared_ptr<const ImageChannel>& imageChannel, const ImageCrop& crop)
+  : ImageCrop(crop), channel(imageChannel)
 {
     if ((width < 1) || (height < 1)) throw ImageException // save later validations in math operations
     (

@@ -79,14 +79,16 @@ class ImageChannel : public std::enable_shared_from_this<ImageChannel> // virtua
 
         double blackLevel() const;
 
-        ImageSelection::ptr select() const // full channel
-        {
-            return ImageSelection::ptr(new ImageSelection(shared_from_this(), 0, 0, width(), height()));
-        }
+        ImageSelection::ptr select(bool unmasked = false) const; // full channel
 
         ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t selectedWidth, imgsize_t selectedHeight) const
         {
             return ImageSelection::ptr(new ImageSelection(shared_from_this(), cx, cy, selectedWidth, selectedHeight));
+        }
+
+        ImageSelection::ptr select(const std::shared_ptr<ImageCrop>& crop) const
+        {
+            return crop? ImageSelection::ptr(new ImageSelection(shared_from_this(), *crop)) : select();
         }
 
         ImageSelection::ptr getLeftMask(bool safetyCrop = true, bool overlappingTop = false) const;

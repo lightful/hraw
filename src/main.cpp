@@ -133,8 +133,6 @@ void demo()
 
 struct ExitNotif { std::string errMsg; };
 
-struct Crop { imgsize_t cx, cy, width, height; };
-
 struct Loop { int deltaX, deltaY, count; };
 
 template <typename T, typename Iter> struct IterationKit
@@ -153,7 +151,7 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>&
     auto appendHistogram = [&](const ImageFilter& filter)
     {
         auto channel = image->getChannel(filter);
-        auto area = crop? channel->select(crop->cx, crop->cy, crop->width, crop->height) : channel->select();
+        auto area = channel->select(crop);
         sumBlack += image->hasBlackLevel()? channel->blackLevel() : 0;
         auto histogram = ImageMath::buildHistogram(area);
         if (wclip && !histogram->data.empty())
@@ -250,12 +248,24 @@ void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw)
     if (iso) std::cerr << iso << ";" << dr8 << std::endl; // useful for a CSV file
 }
 
-void rgbStats2csv(const RawImage::ptr& raw, // must include the masked pixels
-                  imgsize_t cx, imgsize_t cy, // image coordinates for the crop
-                  imgsize_t width, imgsize_t height, // from 1 (actually 4 RGGB) pixel to the entire image
-                  int deltaX, int deltaY, // movement in each axis
-                  int count) // iterations count (less than 2: no movement)
+void rgbStats2csv(const RawImage::ptr& raw, const std::shared_ptr<ImageCrop>& crop, const std::shared_ptr<Loop>& loop)
 {
+    ImageChannel::ptr red = raw->getChannel(ImageFilter::R());
+    ImageChannel::ptr gr1 = raw->getChannel(ImageFilter::G1());
+    ImageChannel::ptr gr2 = raw->getChannel(ImageFilter::G2());
+    ImageChannel::ptr blu = raw->getChannel(ImageFilter::B());
+
+    imgsize_t cx = crop? crop->x : 0;
+    imgsize_t cy = crop? crop->y : 0;
+
+    imgsize_t width = crop? crop->width : gr1->width(); // from 1 (actually 4 RGGB) pixel to the entire image
+    imgsize_t height = crop? crop->height : gr1->height();
+
+    int deltaX = loop? loop->deltaX : 0; // movement in each axis
+    int deltaY = loop? loop->deltaY : 0;
+
+    int count = loop? loop->count : 1; // iterations count (less than 2: no movement)
+
     std::string csvpad = std::string(std::size_t((count > 1? 1 : 13) + (deltaX? 1 : 0) + (deltaY? 1 : 0)), ';');
     std::cout << "width;height;X;Y" << csvpad << std::endl
               << width << ";" << height << ";" << cx << ";" << cy << csvpad << std::endl << std::endl;
@@ -265,11 +275,6 @@ void rgbStats2csv(const RawImage::ptr& raw, // must include the masked pixels
     else
         std::cout << "R mean;R min;R max;R stdev;G1 mean;G1 min;G1 max;G1 stdev;"
                      "G2 mean;G2 min;G2 max;G2 stdev;B mean;B min;B max;B stdev;" << std::endl; // full stats
-
-    ImageChannel::ptr red = raw->getChannel(ImageFilter::R());
-    ImageChannel::ptr gr1 = raw->getChannel(ImageFilter::G1());
-    ImageChannel::ptr gr2 = raw->getChannel(ImageFilter::G2());
-    ImageChannel::ptr blu = raw->getChannel(ImageFilter::B());
 
     auto black_red = raw->hasBlackLevel()? red->blackLevel() : 0;
     auto black_gr1 = raw->hasBlackLevel()? gr1->blackLevel() : 0;
@@ -322,7 +327,7 @@ int main(int argc, char **argv)
         std::shared_ptr<ImageFilter> channel;
         std::shared_ptr<double> ev;
         int iso = 0;
-        std::shared_ptr<Crop> crop;
+        std::shared_ptr<ImageCrop> crop;
         std::shared_ptr<Loop> loop;
 
         if (command == "dpraw")
@@ -399,11 +404,12 @@ int main(int argc, char **argv)
             else if (argname == "-crop")
             {
                 if (argument + 4 >= argc) throw ExitNotif { "-crop requires: cx cy width height" };
-                crop = std::make_shared<Crop>();
-                std::stringstream(argv[++argument]) >> crop->cx;
-                std::stringstream(argv[++argument]) >> crop->cy;
-                std::stringstream(argv[++argument]) >> crop->width;
-                std::stringstream(argv[++argument]) >> crop->height;
+                imgsize_t x, y, width, height;
+                std::stringstream(argv[++argument]) >> x;
+                std::stringstream(argv[++argument]) >> y;
+                std::stringstream(argv[++argument]) >> width;
+                std::stringstream(argv[++argument]) >> height;
+                crop = std::shared_ptr<ImageCrop>(new ImageCrop { x, y, width, height });
             }
             else if (argname == "-loop")
             {
@@ -439,11 +445,9 @@ int main(int argc, char **argv)
         else if (command == "rgbstats")
         {
             if (infile1.empty()) throw ExitNotif { "missing input file" };
-            if (!crop) throw ExitNotif { "-crop must be provided" };
             RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
             ImageAlgo::setBlackLevel(raw, blackPoints);
-            rgbStats2csv(raw, crop->cx, crop->cy, crop->width, crop->height,
-                         loop? loop->deltaX : 0, loop? loop->deltaY : 0, loop? loop->count : 1);
+            rgbStats2csv(raw, crop, loop);
         }
         else if (command == "dpraw")
         {

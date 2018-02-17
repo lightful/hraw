@@ -23,12 +23,13 @@
 
 struct ChannelIterators
 {
-    ChannelIterators(const std::shared_ptr<class RawImage>& image)
-      : red(image->getChannel(ImageFilter::R ())),
-        gr1(image->getChannel(ImageFilter::G1())),
-        gr2(image->getChannel(ImageFilter::G2())),
-        blu(image->getChannel(ImageFilter::B ()))
-    {}
+    ChannelIterators(const std::shared_ptr<class RawImage>& image, bool unmasked = false)
+      : red(image->getChannel(ImageFilter::R ())->select(unmasked)),
+        gr1(image->getChannel(ImageFilter::G1())->select(unmasked)),
+        gr2(image->getChannel(ImageFilter::G2())->select(unmasked)),
+        blu(image->getChannel(ImageFilter::B ())->select(unmasked))
+    {
+    }
 
     inline explicit operator bool() const // return false if no more pixels
     {

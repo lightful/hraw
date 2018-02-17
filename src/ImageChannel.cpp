@@ -37,6 +37,14 @@ double ImageChannel::blackLevel() const
     throw ImageException("blackLevel not defined");
 }
 
+ImageSelection::ptr ImageChannel::select(bool unmasked) const
+{
+    if (unmasked)
+        return select(raw->masked.left, raw->masked.top, width() - raw->masked.left, height() - raw->masked.top);
+    else
+        return select(0, 0, width(), height());
+}
+
 ImageSelection::ptr ImageChannel::getLeftMask(bool safetyCrop, bool overlappingTop) const
 {
     if (!raw->masked.left) throw ImageException("getLeftMask: image lacks a left mask");

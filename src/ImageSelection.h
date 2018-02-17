@@ -33,7 +33,13 @@ class ImageException : public std::logic_error
         explicit ImageException(const std::string& arg) : std::logic_error(arg) {}
 };
 
-class ImageSelection // virtualizes a image area selection within a channel
+struct ImageCrop
+{
+    const imgsize_t x, y;
+    const imgsize_t width, height;
+};
+
+class ImageSelection : public ImageCrop // virtualizes a image area selection within a channel
 {
         ImageSelection& operator=(const ImageSelection&) = delete;
         ImageSelection(const ImageSelection&) = delete;
@@ -42,14 +48,14 @@ class ImageSelection // virtualizes a image area selection within a channel
 
         typedef std::shared_ptr<ImageSelection> ptr;
 
+        explicit ImageSelection(const std::shared_ptr<const class ImageChannel>& imageChannel, const ImageCrop& crop);
+
         explicit ImageSelection(const std::shared_ptr<const class ImageChannel>& imageChannel,
                                 imgsize_t cx, imgsize_t cy,
-                                imgsize_t imageWidth, imgsize_t imageHeight);
+                                imgsize_t imageWidth, imgsize_t imageHeight)
+            : ImageSelection(imageChannel, ImageCrop { cx, cy, imageWidth, imageHeight }) {}
 
         const std::shared_ptr<const class ImageChannel> channel;
-
-        const imgsize_t x, y;
-        const imgsize_t width, height;
 
         ImageSelection::ptr select(imgsize_t cx, imgsize_t cy, imgsize_t subSelWidth, imgsize_t subSelHeight) const;
 
