@@ -115,18 +115,24 @@ RawImage::ptr RawImage::load(const std::string& fileName, const Masked::ptr& opt
 
 void RawImage::save(const std::string& fileName) const
 {
-    std::string format = String::tolower(String::right(fileName, 4));
+    auto ep = fileName.find(".");
+    if (ep == std::string::npos) ep = 0;
+    std::string format = String::tolower(fileName.substr(ep));
     bool isDat = format == ".dat";
     bool isPGM = format == ".pgm";
-    if (!isDat && !isPGM) throw ImageException(VA_STR("unsupported write file format '" << format << "'"));
+    bool isPPM = format == ".ppm";
+    bool isTIFF = format == ".tiff";
+    if (!isDat && !isPGM && !isPPM && !isTIFF)
+        throw ImageException(VA_STR("unsupported write file format '" << format << "'"));
     std::ofstream out(fileName.c_str(), std::ios::binary);
     if (!out) throw ImageException(VA_STR("error opening " << fileName << ": " << getLastError()));
     try
     {
         std::shared_ptr<const RawImage> toSave = shared_from_this();
-        if (isPGM)
+        if (isPGM || isPPM)
         {
-            std::string header = VA_STR("P5\n" << rowPixels << " " << colPixels << "\n65535\n");
+            std::string header = VA_STR("P" << (isPGM? '5' : '6') << "\n"
+                                            << (isPGM? rowPixels : rowPixels/3) << " " << colPixels << "\n65535\n");
             if (!out.write(header.c_str(), std::streamsize(header.length()))) throw true;
             try { toSave = RawImage::create(rowPixels, colPixels, masked); } catch(...) { throw true; }
             std::memcpy(toSave->data, data, length);
@@ -136,6 +142,32 @@ void RawImage::save(const std::string& fileName) const
                 *pixel = endian(*pixel);
                 pixel++;
             }
+        }
+        else if (isTIFF)
+        {
+            auto write16 = [&out](uint16_t value) { if (!out.write((const char*) &value, sizeof(value))) throw true; };
+            auto write32 = [&out](uint32_t value) { if (!out.write((const char*) &value, sizeof(value))) throw true; };
+            if (!(out << (isBigEndian()? "MM" : "II"))) throw true;
+            write16(42); // TIFF version
+            uint32_t ifd_offset = 8;
+            uint16_t ifd_entries = 8;
+            uint32_t no_next_ifd = 0;
+            uint32_t samplesPerPixel = 3;
+            uint16_t bitdepth = 16;
+            uint32_t bitdepth__offset = uint32_t(ifd_offset + sizeof(ifd_entries) + ifd_entries * 12u + sizeof(no_next_ifd));
+            uint32_t image_offset = uint32_t(bitdepth__offset + samplesPerPixel * sizeof(bitdepth));
+            write32(ifd_offset);
+            write16(ifd_entries);
+            write16(0x100); write16(3); write32(1); write32(rowPixels/3);      // ImageWidth
+            write16(0x101); write16(3); write32(1); write32(colPixels);        // ImageLength
+            write16(0x102); write16(3); write32(3); write32(bitdepth__offset); // BitsPerSample
+            write16(0x106); write16(3); write32(1); write32(2);                // PhotometricInterpretation (2: RGB)
+            write16(0x111); write16(4); write32(1); write32(image_offset);     // StripOffsets
+            write16(0x115); write16(3); write32(1); write32(samplesPerPixel);  // SamplesPerPixel
+            write16(0x116); write16(3); write32(1); write32(colPixels);        // RowsPerStrip
+            write16(0x117); write16(4); write32(1); write32(toSave->length);   // StripByteCounts
+            write32(no_next_ifd);
+            write16(bitdepth); write16(bitdepth); write16(bitdepth); // bits per sample (R,G,B)
         }
         if (!out.write((const char*) toSave->data, toSave->length)) throw true;
         out.close();
