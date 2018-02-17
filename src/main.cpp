@@ -225,6 +225,21 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>&
     }
 }
 
+void stats(const RawImage::ptr& raw, const ImageFilter& analyzeChannel, const std::shared_ptr<ImageCrop>& crop)
+{
+    ImageChannel::ptr channel = raw->getChannel(analyzeChannel);
+    ImageSelection::ptr area = channel->select(crop);
+    auto stArea = ImageMath::analyze(area);
+    auto whiteLevel = raw->whiteLevel? *raw->whiteLevel : stArea.max;
+    auto blackLevel = raw->hasBlackLevel()? channel->blackLevel() : stArea.mean;
+    double dr = log((whiteLevel - blackLevel) / stArea.stdev) / log(2);
+    double mp = raw->pixelCount() / 1000000.0;
+    double dr8 = dr + log(sqrt(mp/8)) / log(2);
+    std::cout << "min;max;mean;stdev;DR@" << int(mp+0.5) << ";DR@8" << std::endl;
+    std::cout << stArea.min << ";" << stArea.max << ";" << stArea.mean << ";" << stArea.stdev
+              << ";" << dr << ";" << dr8 << std::endl;
+}
+
 void mskstats(const RawImage::ptr& raw, const ImageFilter& analyzeChannel)
 {
     ImageChannel::ptr channel = raw->getChannel(analyzeChannel);
@@ -441,6 +456,14 @@ int main(int argc, char **argv)
             RawImage::ptr result = ImageAlgo::zebras(raw);
             result->save(outfile);
         }
+        else if (command == "stats")
+        {
+            if (infile1.empty()) throw ExitNotif { "missing input file" };
+            auto raw = RawImage::load(infile1, opticalBlack);
+            ImageAlgo::setBlackLevel(raw, blackPoints);
+            ImageAlgo::setWhiteLevel(raw, whitePoint);
+            stats(raw, channel? *channel : ImageFilter::RGB(), crop);
+        }
         else if (command == "mskstats")
         {
             if (infile1.empty()) throw ExitNotif { "missing input file" };
@@ -487,11 +510,12 @@ int main(int argc, char **argv)
             << "              (c) 2016-2018 Ciriaco Garcia de Celis" << std::endl
             << std::endl
             << "    Commands:" << std::endl
-            << "      histogram -i [-m] [-b] [-crop] [-w]" << std::endl
-            << "      rgbstats  -i [-m] [-b] -crop [-loop]" << std::endl
-            << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o -m|-b -w [-ev]" << std::endl
+            << "      histogram -i [-b|-m] [-w] [-crop]" << std::endl
             << "      zebras    -i -b|-m -w [-o(tiff/ppm)]" << std::endl
+            << "      stats     -i [-c] [-b] [-w] [-crop]" << std::endl
             << "      mskstats  -i -c -m [-w]" << std::endl
+            << "      rgbstats  -i [-b|-m] [-crop] [-loop]" << std::endl
+            << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o(dat/pgm) -m|-b -w [-ev]" << std::endl
             << std::endl
             << "    Arguments:" << std::endl
             << "      -i fileName.pgm            single input file" << std::endl
@@ -502,7 +526,7 @@ int main(int argc, char **argv)
             << "      -w whitePoint              integer number (black point not substracted)" << std::endl
             << "      -c R|G1|G2|G|B|RGB         color filter selection" << std::endl
             << "      -ev EV                     exposure adjust (positive or negative)" << std::endl
-            << "      -crop cx cy width height   rectangle selection bayer coordinates (half width & height)" << std::endl
+            << "      -crop cx cy width height   rectangle selection (bayer coordinates: half width & height)" << std::endl
             << "      -loop deltaX deltaY count  multiline output moving the selection" << std::endl
             << std::endl
             << "    Input PGM files previously generated from camera raw files with dcraw:" << std::endl
