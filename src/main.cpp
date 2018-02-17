@@ -225,7 +225,7 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>&
     }
 }
 
-void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw)
+void mskstats(const RawImage::ptr& raw, const ImageFilter& analyzeChannel)
 {
     ImageChannel::ptr channel = raw->getChannel(analyzeChannel);
     ImageSelection::ptr maskedPixels = channel->getLeftMask();
@@ -236,16 +236,13 @@ void analyze(int iso, const ImageFilter& analyzeChannel, RawImage::ptr raw)
     double dr = log((1.0 * (whitePoint? *whitePoint : stImage.max) - stMasked.mean) / stMasked.stdev) / log(2);
     double mp = raw->pixelCount() / 1000000.0;
     double dr8 = dr + log(sqrt(mp/8)) / log(2);
-    if (iso) std::cout << "ISO " << iso << ": ";
     std::cout << "ReadNoise=" << stMasked.stdev << " DR@" << int(mp+0.5) << "=" << dr
               << " DR@8=" << dr8 << " file { " << raw->name << " }" << std::endl;
-    if (iso) std::cout << "ISO " << iso << ": ";
     std::cout << "image { mean=" << stImage.mean << " min=" << stImage.min << " max=" << stImage.max << " }"
               << " left mask { mean=" << stMasked.mean << " min=" << stMasked.min << " max=" << stMasked.max
               << " crop=" << maskedPixels->width << "x" << maskedPixels->height
                           << "+" << maskedPixels->x << "+" << maskedPixels->y << " }"
               << std::endl;
-    if (iso) std::cerr << iso << ";" << dr8 << std::endl; // useful for a CSV file
 }
 
 void rgbStats2csv(const RawImage::ptr& raw, const std::shared_ptr<ImageCrop>& crop, const std::shared_ptr<Loop>& loop)
@@ -315,8 +312,8 @@ int main(int argc, char **argv)
     {
         int argument = 0;
         std::string command = String::tolower(argc > 1? argv[++argument] : "help");
-        ImageAlgo::DPRAW::Action dprawAction;
-        ImageAlgo::DPRAW::ProcessMode dprawProcessMode;
+        ImageAlgo::DPRAW::Action dprawAction = ImageAlgo::DPRAW::Action::GetA;
+        ImageAlgo::DPRAW::ProcessMode dprawProcessMode = ImageAlgo::DPRAW::ProcessMode::Plain;
 
         std::string infile1;
         std::string infile2;
@@ -326,7 +323,6 @@ int main(int argc, char **argv)
         std::shared_ptr<bitdepth_t> whitePoint;
         std::shared_ptr<ImageFilter> channel;
         std::shared_ptr<double> ev;
-        int iso = 0;
         std::shared_ptr<ImageCrop> crop;
         std::shared_ptr<Loop> loop;
 
@@ -396,11 +392,6 @@ int main(int argc, char **argv)
                 ev = std::make_shared<double>();
                 std::stringstream(argv[++argument]) >> *ev;
             }
-            else if (argname == "-iso")
-            {
-                if (argument + 1 >= argc) throw ExitNotif { "-iso requires a integer number" };
-                std::stringstream(argv[++argument]) >> iso;
-            }
             else if (argname == "-crop")
             {
                 if (argument + 4 >= argc) throw ExitNotif { "-crop requires: cx cy width height" };
@@ -450,14 +441,14 @@ int main(int argc, char **argv)
             RawImage::ptr result = ImageAlgo::zebras(raw);
             result->save(outfile);
         }
-        else if (command == "analyze")
+        else if (command == "mskstats")
         {
             if (infile1.empty()) throw ExitNotif { "missing input file" };
             if (!channel) throw ExitNotif { "image channel must be specified" };
             if (!opticalBlack) throw ExitNotif { "left and top mask must be specified" };
             auto raw = RawImage::load(infile1, opticalBlack);
             ImageAlgo::setWhiteLevel(raw, whitePoint);
-            analyze(raw, *channel);
+            mskstats(raw, *channel);
         }
         else if (command == "rgbstats")
         {
@@ -497,10 +488,10 @@ int main(int argc, char **argv)
             << std::endl
             << "    Commands:" << std::endl
             << "      histogram -i [-m] [-b] [-crop] [-w]" << std::endl
-            << "      analyze   -i -c -m [-w] [-iso]" << std::endl
             << "      rgbstats  -i [-m] [-b] -crop [-loop]" << std::endl
             << "      dpraw      GetA|Blend Plain|Bayer -i2 AB_0.pgm B_1.pgm -o -m|-b -w [-ev]" << std::endl
             << "      zebras    -i -b|-m -w [-o(tiff/ppm)]" << std::endl
+            << "      mskstats  -i -c -m [-w]" << std::endl
             << std::endl
             << "    Arguments:" << std::endl
             << "      -i fileName.pgm            single input file" << std::endl
@@ -511,7 +502,6 @@ int main(int argc, char **argv)
             << "      -w whitePoint              integer number (black point not substracted)" << std::endl
             << "      -c R|G1|G2|G|B|RGB         color filter selection" << std::endl
             << "      -ev EV                     exposure adjust (positive or negative)" << std::endl
-            << "      -iso ISO                   ISO speed" << std::endl
             << "      -crop cx cy width height   rectangle selection bayer coordinates (half width & height)" << std::endl
             << "      -loop deltaX deltaY count  multiline output moving the selection" << std::endl
             << std::endl
@@ -519,7 +509,7 @@ int main(int argc, char **argv)
             << "      dcraw -D -4 -j -t 0 -s all  (plain non demosaiced raw image data)" << std::endl
             << "      dcraw -E -4 -j -t 0 -s all  (request including the masked pixels for the -m option)" << std::endl
             << std::endl
-            << "    dpraw's output image can also be piped to dcraw to be decoded:" << std::endl
+            << "    dpraw's output (.dat) image can also be piped to dcraw to be decoded:" << std::endl
             << "      cat fileName.dat | dcraw -k black -S white -W -w -v -I -c rawFile.cr2 > image.ppm" << std::endl
             << std::endl;
             return 1;
