@@ -1,6 +1,6 @@
 /*
  *  HRAW - Hacker's toolkit for image sensor characterisation
- *  Copyright 2016 Ciriaco Garcia de Celis
+ *  Copyright 2016-2018 Ciriaco Garcia de Celis
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,44 +16,60 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <cstring>
 #include <cerrno>
 #include <sstream>
+#include <fstream>
 #include <limits>
-#include <arpa/inet.h>
 #include "Util.hpp"
 #include "RawImage.h"
 
-template <typename T> T toLocalEndian(T number);
-template <> uint16_t toLocalEndian(uint16_t number) { return ntohs(number); }
-template <> uint32_t toLocalEndian(uint32_t number) { return ntohl(number); }
+inline bool isBigEndian()
+{
+    static union { uint16_t i; uint8_t c; } endianness { 0x0102 };
+    return endianness.c == 0x01;
+}
 
-template <typename T> T toFileEndian(T number);
-template <> uint16_t toFileEndian(uint16_t number)  { return htons(number); }
-template <> uint32_t toFileEndian(uint32_t number)  { return htonl(number); }
+template <typename T> T endian(T n); // Winsock2.h would define conflicting macros like 'RGB' or (a lowercase!) 'max'...
 
-RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& header, const RawImage::Masked& opticalBlack)
+template <> uint16_t endian(uint16_t n)
+{
+    return isBigEndian()? n : uint16_t(n >> 8 | n << 8);
+}
+
+template <> uint32_t endian(uint32_t n)
+{
+    return isBigEndian()? n : uint32_t(n >> 24 | (n & 0xFF0000) >> 8 | (n & 0xFF00) << 8 | n << 24);
+}
+
+std::string getLastError() // no C++11 portable error reporting support actually beyond failbit
+{
+    auto ecode = errno;
+    char msg[1024];
+#ifdef _WIN32
+    strerror_s(msg, sizeof(msg)-1, ecode);
+    return msg;
+#else
+    return strerror_r(ecode, msg, sizeof(msg)-1);
+#endif
+}
+
+RawImage::ptr loadPGM(const std::string& fileName,
+                      std::ifstream& in, std::istringstream& header,
+                      const RawImage::Masked& opticalBlack)
 {
     uint64_t ww, hh;
     header >> ww;
     header >> hh;
     if ((ww > std::numeric_limits<imgsize_t>::max()) || (hh > std::numeric_limits<imgsize_t>::max()))
-    {
-        close(fd);
         throw ImageException(VA_STR(fileName << " unsupported file size (" << ww << "x" << hh << ")"));
-    }
+
     imgsize_t width = imgsize_t(ww);
     imgsize_t height = imgsize_t(hh);
     uint64_t maxcolor;
     header >> maxcolor;
     if ((maxcolor < 256) || (maxcolor > 65535))
-    {
-        close(fd);
         throw ImageException(VA_STR(fileName << " not a 16-bit PGM file"));
-    }
 
     auto image = RawImage::create(width, height, opticalBlack);
 
@@ -63,16 +79,15 @@ RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& h
     uint8_t delim;
     header.read((char *) &delim, 1);
 
-    lseek(fd, header.tellg(), SEEK_SET);
+    in.seekg(header.tellg(), std::ios::beg);
 
-    auto bytes = read(fd, (char *) image->data, image->length);
-    close(fd);
-    if (bytes < decltype(bytes)(image->length)) throw ImageException(VA_STR("error reading " << fileName));
+    if (!in.read((char *) image->data, image->length))
+        throw ImageException(VA_STR("error reading " << fileName));
 
     bitdepth_t* pixel = image->data;
     for (imgsize_t px = 0; px < image->length; px++)
     {
-        *pixel = toLocalEndian(*pixel);
+        *pixel = endian(*pixel);
         pixel++;
     }
 
@@ -81,28 +96,21 @@ RawImage::ptr loadPGM(const std::string& fileName, int fd, std::istringstream& h
 
 RawImage::ptr RawImage::load(const std::string& fileName, const Masked::ptr& opticalBlack) // from any supported file
 {
-    int fd = open(fileName.c_str(), O_RDONLY);
-    if (fd < 0) throw ImageException(VA_STR("opening " << fileName << ": " << strerror(errno)));
+    std::ifstream in(fileName.c_str(), std::ios::binary);
+    if (!in) throw ImageException(VA_STR("opening " << fileName << ": " << getLastError()));
 
     char buffer[64];
-    auto bytes = read(fd, buffer, sizeof(buffer));
-    if (bytes < decltype(bytes)(sizeof(buffer)))
-    {
-        close(fd);
+    if (!in.read(buffer, sizeof(buffer)))
         throw ImageException(VA_STR(fileName << ": too short file"));
-    }
 
     buffer[sizeof(buffer)-1] = 0;
     std::istringstream header(buffer);
     std::string magic;
     header >> magic;
     if (magic != "P5")
-    {
-        close(fd);
         throw ImageException(VA_STR(fileName << " seems not to be a valid PGM file"));
-    }
 
-    return loadPGM(fileName, fd, header, opticalBlack? *opticalBlack : RawImage::Masked { 0, 0 });
+    return loadPGM(fileName, in, header, opticalBlack? *opticalBlack : RawImage::Masked { 0, 0 });
 }
 
 void RawImage::save(const std::string& fileName) const
@@ -111,33 +119,31 @@ void RawImage::save(const std::string& fileName) const
     bool isDat = format == ".dat";
     bool isPGM = format == ".pgm";
     if (!isDat && !isPGM) throw ImageException(VA_STR("unsupported write file format '" << format << "'"));
-    int fd = open(fileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0664);
-    if (fd < 0) throw ImageException(VA_STR("error opening " << fileName << ": " << strerror(errno)));
+    std::ofstream out(fileName.c_str(), std::ios::binary);
+    if (!out) throw ImageException(VA_STR("error opening " << fileName << ": " << getLastError()));
     try
     {
         std::shared_ptr<const RawImage> toSave = shared_from_this();
         if (isPGM)
         {
             std::string header = VA_STR("P5\n" << rowPixels << " " << colPixels << "\n65535\n");
-            auto bytes = write(fd, header.c_str(), header.length());
-            if (bytes != decltype(bytes)(header.length())) throw true;
+            if (!out.write(header.c_str(), std::streamsize(header.length()))) throw true;
             try { toSave = RawImage::create(rowPixels, colPixels, masked); } catch(...) { throw true; }
-            memcpy(toSave->data, data, length);
+            std::memcpy(toSave->data, data, length);
             bitdepth_t* pixel = toSave->data;
             for (imgsize_t px = 0; px < toSave->length; px++)
             {
-                *pixel = toFileEndian(*pixel);
+                *pixel = endian(*pixel);
                 pixel++;
             }
         }
-        auto bytes = write(fd, toSave->data, toSave->length);
-        if (bytes != decltype(bytes)(toSave->length)) throw true;
-        if (close(fd)) throw false;
+        if (!out.write((const char*) toSave->data, toSave->length)) throw true;
+        out.close();
+        if (out.fail()) throw true;
     }
-    catch (bool& fdIsOpen)
+    catch (bool&)
     {
-        std::string reason = VA_STR("writing " << fileName << ": " << strerror(errno));
-        if (fdIsOpen) close(fd);
+        std::string reason = VA_STR("error writing " << fileName << ": " << getLastError());
         throw ImageException(reason);
     }
 }
