@@ -17,13 +17,16 @@
  */
 
 #include <cmath>
+#include <vector>
 #include "ImageMath.h"
 
 ImageMath::Histogram::ptr ImageMath::buildHistogram(const ImageSelection::ptr& bitmap)
 {
     auto info = std::make_shared<ImageMath::Histogram>();
     ImageSelection::Iterator pixel(bitmap);
-    while (pixel) ++info->data[pixel++];
+    std::vector<bitdepth_t> fastc(16384);
+    while (pixel) if (pixel < fastc.size()) ++fastc[pixel++]; else ++info->data[pixel++];
+    for (bitdepth_t i = 0; i < fastc.size(); i++) if (fastc[i]) info->data[i] = fastc[i];
     info->total = 0;
     info->mode = 0;
     uint64_t modeFreq = 0;
