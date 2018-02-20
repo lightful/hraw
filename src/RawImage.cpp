@@ -115,7 +115,7 @@ RawImage::ptr RawImage::load(const std::string& fileName, const Masked::ptr& opt
 
 void RawImage::save(const std::string& fileName) const
 {
-    auto ep = fileName.find(".");
+    auto ep = fileName.find_last_of(".");
     if (ep == std::string::npos) ep = 0;
     std::string format = String::tolower(fileName.substr(ep));
     bool isDat = format == ".dat";
