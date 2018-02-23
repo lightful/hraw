@@ -437,7 +437,7 @@ int main(int argc, char **argv)
             ImageAlgo::setWhiteLevel(raw, whitePoint);
             histogram2csv(raw, crop);
         }
-        else if (command == "zebras")
+        else if (command == "clipping")
         {
             if (infile1.empty()) throw ExitNotif{ "missing input file" };
             if (outfile.empty())
@@ -451,7 +451,7 @@ int main(int argc, char **argv)
             ImageAlgo::setBlackLevel(raw, blackPoints);
             if (!raw->hasBlackLevel()) throw ExitNotif{ "missing black point(s)" };
             ImageAlgo::setWhiteLevel(raw, whitePoint);
-            RawImage::ptr result = ImageAlgo::zebras(raw);
+            RawImage::ptr result = ImageAlgo::clipping(raw);
             result->save(outfile);
         }
         else if (command == "stats")
@@ -509,7 +509,7 @@ int main(int argc, char **argv)
             << std::endl
             << "    Commands:" << std::endl
             << "      histogram -i [-b|-m] [-w] [-crop]" << std::endl
-            << "      zebras    -i -b|-m -w [-o(tiff/ppm)]" << std::endl
+            << "      clipping  -i -b|-m -w [-o(tiff/ppm)]" << std::endl
             << "      stats     -i [-c] [-b] [-w] [-crop]" << std::endl
             << "      mskstats  -i -c -m [-w]" << std::endl
             << "      rgbstats  -i [-b|-m] [-crop] [-loop]" << std::endl

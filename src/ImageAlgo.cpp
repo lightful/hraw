@@ -135,7 +135,7 @@ ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& 
     return info;
 }
 
-RawImage::ptr ImageAlgo::zebras(const RawImage::ptr& input) // assumed RGGB bayer geometry
+RawImage::ptr ImageAlgo::clipping(const RawImage::ptr& input) // assumed RGGB bayer geometry
 {
     double avgBlackLevel = input->blackLevel[ImageFilter::Code::RGB];
     bitdepth_t blackLevel = bitdepth_t(std::round(avgBlackLevel));
@@ -149,9 +149,9 @@ RawImage::ptr ImageAlgo::zebras(const RawImage::ptr& input) // assumed RGGB baye
     ImageSelection::ptr full = plain->select();
     ImageSelection::Iterator out(full);
 
-    bitdepth_t czebra = 65535; // 16-bit output
+    bitdepth_t outclip = 65535; // 16-bit output
     double maxWhite = whiteLevel - avgBlackLevel;
-    double brightnessAdjust = pow(2, log(czebra)/log(2) - 0.5) / maxWhite; // separate non clipped data 0.5EV from zebras
+    double brightnessAdjust = pow(2, log(outclip)/log(2) - 0.5) / maxWhite; // separate non clipped data 0.5EV
 
     auto gamma = [&maxWhite](double adu) -> double { return pow(adu / maxWhite, 1/2.2) * maxWhite; };
 
@@ -168,9 +168,9 @@ RawImage::ptr ImageAlgo::zebras(const RawImage::ptr& input) // assumed RGGB baye
 
         if ((red >= whiteLevel) || (gr1 >= whiteLevel) || (gr2 >= whiteLevel) || (blu >= whiteLevel)) // any burnt subpixel?
         {
-            red = red >= whiteLevel? czebra : 0;
-            gr1 = (gr1 >= whiteLevel) || (gr2 >= whiteLevel)? czebra : 0;
-            blu = blu >= whiteLevel? czebra : 0;
+            red = red >= whiteLevel? outclip : 0;
+            gr1 = (gr1 >= whiteLevel) || (gr2 >= whiteLevel)? outclip : 0;
+            blu = blu >= whiteLevel? outclip : 0;
         }
         else // cheap demosaicing (a quarter of the original resolution)
         {
