@@ -66,39 +66,38 @@ struct ChannelBlacks
     const double blu;
 };
 
-void ImageAlgo::setBlackLevel(const RawImage::ptr& image, std::shared_ptr<std::vector<double>> blackPoints)
+void ImageAlgo::setBlackLevel(const RawImage::ptr& image, std::vector<double> blackPoints)
 {
-    if (!blackPoints && image->masked.left) // if not externally supplied compute them from the masked pixels
+    if (blackPoints.empty() && image->masked.left) // if not externally supplied compute them from the masked pixels
     {
-        blackPoints = std::make_shared<std::vector<double>>();
-        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::R())->getLeftMask()).mean);
-        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G1())->getLeftMask()).mean);
-        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G2())->getLeftMask()).mean);
-        blackPoints->emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::B())->getLeftMask()).mean);
+        blackPoints.emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::R())->getLeftMask()).mean);
+        blackPoints.emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G1())->getLeftMask()).mean);
+        blackPoints.emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::G2())->getLeftMask()).mean);
+        blackPoints.emplace_back(ImageMath::analyze(image->getChannel(ImageFilter::B())->getLeftMask()).mean);
     }
 
-    if (blackPoints && !blackPoints->empty())
+    if (!blackPoints.empty())
     {
         auto& blacks = image->blackLevel;
         blacks.clear();
 
-        if (blackPoints->size() == 4)
+        if (blackPoints.size() == 4)
         {
-            blacks.emplace(ImageFilter::Code::R,   blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::G1,  blackPoints->at(1));
-            blacks.emplace(ImageFilter::Code::G2,  blackPoints->at(2));
-            blacks.emplace(ImageFilter::Code::B,   blackPoints->at(3));
-            blacks.emplace(ImageFilter::Code::G,   (blackPoints->at(1) + blackPoints->at(2)) / 2);
-            blacks.emplace(ImageFilter::Code::RGB, std::accumulate(blackPoints->begin(), blackPoints->end(), 0.0) / 4);
+            blacks.emplace(ImageFilter::Code::R,   blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::G1,  blackPoints.at(1));
+            blacks.emplace(ImageFilter::Code::G2,  blackPoints.at(2));
+            blacks.emplace(ImageFilter::Code::B,   blackPoints.at(3));
+            blacks.emplace(ImageFilter::Code::G,   (blackPoints.at(1) + blackPoints.at(2)) / 2);
+            blacks.emplace(ImageFilter::Code::RGB, std::accumulate(blackPoints.begin(), blackPoints.end(), 0.0) / 4);
         }
         else
         {
-            blacks.emplace(ImageFilter::Code::R,   blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::G1,  blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::G2,  blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::B,   blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::G,   blackPoints->at(0));
-            blacks.emplace(ImageFilter::Code::RGB, blackPoints->at(0));
+            blacks.emplace(ImageFilter::Code::R,   blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::G1,  blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::G2,  blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::B,   blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::G,   blackPoints.at(0));
+            blacks.emplace(ImageFilter::Code::RGB, blackPoints.at(0));
         }
     }
 }
@@ -138,8 +137,7 @@ ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& 
 
 RawImage::ptr ImageAlgo::zebras(const RawImage::ptr& input) // assumed RGGB bayer geometry
 {
-    ChannelBlacks black(input);
-    double avgBlackLevel = (black.red + black.gr1 + black.gr2 + black.blu) / 4;
+    double avgBlackLevel = input->blackLevel[ImageFilter::Code::RGB];
     bitdepth_t blackLevel = bitdepth_t(std::round(avgBlackLevel));
     bitdepth_t whiteLevel = *input->whiteLevel;
     ChannelIterators in(input, true);

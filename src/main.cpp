@@ -145,14 +145,12 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>&
 {
     typedef IterationKit<ImageMath::Histogram::ptr, ImageMath::Histogram::Frequencies::const_iterator> HistoIter;
     std::vector<HistoIter> histoIter;
-    double sumBlack = 0;
     auto wclip = image->whiteLevel; // note: when this parameter is provided a *FAKE* histogram is generated
 
     auto appendHistogram = [&](const ImageFilter& filter)
     {
         auto channel = image->getChannel(filter);
         auto area = channel->select(crop);
-        sumBlack += image->hasBlackLevel()? channel->blackLevel() : 0;
         auto histogram = ImageMath::buildHistogram(area);
         if (wclip && !histogram->data.empty())
         {
@@ -176,7 +174,7 @@ void histogram2csv(const RawImage::ptr& image, const std::shared_ptr<ImageCrop>&
     appendHistogram(ImageFilter::B());
     std::cout << std::endl;
 
-    bitdepth_t blackLevel = bitdepth_t(0.5 + sumBlack / double(histoIter.size()));
+    bitdepth_t blackLevel = image->hasBlackLevel()? bitdepth_t(std::round(image->blackLevel[ImageFilter::Code::RGB])) : 0;
 
     int64_t val = std::numeric_limits<int64_t>::max();
     for (const auto& i : histoIter) if (i.cur->first < val) val = i.cur->first; // starting point
@@ -334,7 +332,7 @@ int main(int argc, char **argv)
         std::string infile2;
         RawImage::Masked::ptr opticalBlack;
         std::string outfile;
-        std::shared_ptr<std::vector<double>> blackPoints;
+        std::vector<double> blackPoints;
         std::shared_ptr<bitdepth_t> whitePoint;
         std::shared_ptr<ImageFilter> channel;
         std::shared_ptr<double> ev;
@@ -381,11 +379,11 @@ int main(int argc, char **argv)
             }
             else if (argname == "-b")
             {
-                blackPoints = std::make_shared<std::vector<double>>(4);
+                blackPoints.resize(4);
                 std::size_t cnt = 0;
-                while ((cnt < 4) && (++argument < argc) && std::stringstream(argv[argument]) >> blackPoints->at(cnt)) cnt++;
+                while ((cnt < 4) && (++argument < argc) && std::stringstream(argv[argument]) >> blackPoints.at(cnt)) cnt++;
                 if (cnt == 1) --argument; else if (cnt != 4) throw ExitNotif { "-b requires one or four blackpoints" };
-                blackPoints->resize(cnt);
+                blackPoints.resize(cnt);
             }
             else if (argname == "-w")
             {
@@ -497,7 +495,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            throw ExitNotif {};
+            throw ExitNotif();
         }
     }
     catch (ExitNotif& err)
@@ -540,14 +538,14 @@ int main(int argc, char **argv)
         }
         else
         {
-            std::cout << std::endl << "ERROR: " << err.errMsg << std::endl
+            std::cerr << std::endl << "ERROR: " << err.errMsg << std::endl
                       << "Run the application with no arguments for help" << std::endl << std::endl;
             return 2;
         }
     }
     catch (ImageException& e)
     {
-        std::cout << e.what() << std::endl;
+        std::cerr << e.what() << std::endl;
         return 3;
     }
 

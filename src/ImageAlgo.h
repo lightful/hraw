@@ -44,7 +44,7 @@ class ImageAlgo
             std::shared_ptr<double> shiftEV; // imgAB EV shift for blending
         };
 
-        static void setBlackLevel(const RawImage::ptr& image, std::shared_ptr<std::vector<double>> blackPoints);
+        static void setBlackLevel(const RawImage::ptr& image, std::vector<double> blackPoints);
         static void setWhiteLevel(const RawImage::ptr& image, std::shared_ptr<bitdepth_t> whitePoint);
 
         static Highlights getHighlights(const ImageMath::Histogram::ptr& histogram);
