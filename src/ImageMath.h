@@ -46,8 +46,9 @@ class ImageMath
             typedef std::shared_ptr<Histogram> ptr;
             typedef std::map<bitdepth_t, imgsize_t> Frequencies;
             Frequencies data;
-            uint64_t total;
+            imgsize_t total;
             bitdepth_t mode; // statistical mode
+            bitdepth_t hDelta; // highlights compression detected if > 1
         };
 
         static Histogram::ptr buildHistogram(const ImageSelection::ptr& bitmap);

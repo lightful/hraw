@@ -28,10 +28,11 @@ class ImageAlgo
 {
     public:
 
-        struct Highlights // less unreliable when got from full-size channel histograms
+        struct Levels // recommended full-size channel histograms
         {
-            bitdepth_t whiteLevel;  // highest non clipped DN
-            imgsize_t clippedCount; // amount of pixels
+            bitdepth_t blackLevel;
+            bitdepth_t whiteLevel;
+            imgsize_t clippedCount; // amount of clipped pixels
         };
 
         struct DPRAW // Canon Dual Pixel RAW
@@ -47,7 +48,7 @@ class ImageAlgo
         static void setBlackLevel(const RawImage::ptr& image, std::vector<double> blackPoints);
         static void setWhiteLevel(const RawImage::ptr& image, std::shared_ptr<bitdepth_t> whitePoint);
 
-        static Highlights getHighlights(const ImageMath::Histogram::ptr& histogram);
+        static Levels autoLevels(const ImageMath::Histogram::ptr& histogram);
 
         static RawImage::ptr clipping(const RawImage::ptr& input);
 

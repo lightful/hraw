@@ -107,29 +107,53 @@ void ImageAlgo::setWhiteLevel(const RawImage::ptr& image, std::shared_ptr<bitdep
     image->whiteLevel = whitePoint;
 }
 
-ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& histogram)
+ImageAlgo::Levels ImageAlgo::autoLevels(const ImageMath::Histogram::ptr& histogram)
 {
-    if (histogram->data.empty()) throw ImageException("getHighlights: empty histogram");
-    Highlights info { 0, 0 };
-    info.clippedCount = 0;
-    uint64_t threshold = histogram->total / 10000;
+    if (histogram->data.empty()) throw ImageException("autoLevels: empty histogram");
+    Levels info { 0, 0, 0 };
+    bitdepth_t levels = 0;
+    for (auto itf = histogram->data.cbegin(); itf != histogram->data.cend(); ++itf)
+    {
+        if (levels++ < 8) continue;
+        info.blackLevel = bitdepth_t(pow(2, int(log(itf->first) / log(2) + 0.5)));
+        break;
+    }
+    bitdepth_t suspiciousLevel = 0;
+    imgsize_t spike = 1;
+    imgsize_t clippedCount = 0;
+    imgsize_t clipThreshold = 16;
+    bitdepth_t level = bitdepth_t(histogram->data.crbegin()->first + 1);
+    levels = 0;
     for (auto ritf = histogram->data.crbegin(); ritf != histogram->data.crend(); ++ritf)
     {
-        info.clippedCount += ritf->second;
-        if (ritf->second > threshold)
+        if (levels++ > 128) break;
+        level = ritf->first;
+        imgsize_t pixels = ritf->second;
+        clippedCount += pixels;
+        if (!info.whiteLevel) info.whiteLevel = level;
+        if (pixels > 4)
         {
-            if (info.clippedCount - ritf->second < threshold / 10) // overexposed
+            if ((pixels >= clipThreshold * (levels == 1? 1 : histogram->hDelta)) // account for compression
+                && (pixels / spike >= clipThreshold)) // account for spurious data after clipping
             {
-                info.whiteLevel = ++ritf != histogram->data.rend()? ritf->first : 0;
+                suspiciousLevel = level;
+                info.clippedCount = clippedCount;
             }
-            else
+            if (pixels > spike) spike = pixels;
+        }
+    }
+    if (suspiciousLevel) info.whiteLevel = suspiciousLevel; else info.clippedCount = 0;
+    if (info.clippedCount)
+    {
+        auto prevclip = histogram->data.find(info.whiteLevel);
+        if (prevclip != histogram->data.begin())
+        {
+            --prevclip;
+            if (prevclip->second > info.clippedCount / 4) // some channel clipped in the previous level?
             {
-                info.clippedCount = 0;
-                while ((ritf != histogram->data.crbegin()) && ritf->second) ++ritf;
-                if (!ritf->second) --ritf;
-                info.whiteLevel = ritf->first;
+                info.clippedCount += prevclip->second; // just in case
+                info.whiteLevel = prevclip->first;
             }
-            break;
         }
     }
     return info;
@@ -137,6 +161,8 @@ ImageAlgo::Highlights ImageAlgo::getHighlights(const ImageMath::Histogram::ptr& 
 
 RawImage::ptr ImageAlgo::clipping(const RawImage::ptr& input) // assumed RGGB bayer geometry
 {
+    if (!input->hasBlackLevel()) throw ImageException("clipping: missing black point");
+    if (!input->whiteLevel) throw ImageException("clipping: missing white point");
     double avgBlackLevel = input->blackLevel[ImageFilter::Code::RGB];
     bitdepth_t blackLevel = bitdepth_t(std::round(avgBlackLevel));
     bitdepth_t whiteLevel = *input->whiteLevel;

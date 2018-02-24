@@ -24,14 +24,27 @@ ImageMath::Histogram::ptr ImageMath::buildHistogram(const ImageSelection::ptr& b
 {
     auto info = std::make_shared<ImageMath::Histogram>();
     ImageSelection::Iterator pixel(bitmap);
-    std::vector<bitdepth_t> fastc(16384);
+    std::vector<imgsize_t> fastc(16384);
     while (pixel) if (pixel < fastc.size()) ++fastc[pixel++]; else ++info->data[pixel++];
     for (bitdepth_t i = 0; i < fastc.size(); i++) if (fastc[i]) info->data[i] = fastc[i];
     info->total = 0;
     info->mode = 0;
-    uint64_t modeFreq = 0;
-    for (auto i = info->data.cbegin(); i != info->data.cend(); ++i)
+    imgsize_t modeFreq = 0;
+    imgsize_t level = 0;
+    bitdepth_t prevDeltaLevel = 0;
+    imgsize_t deltaCum = 0;
+    bitdepth_t deltaCnt = 0;
+    for (auto i = info->data.crbegin(); i != info->data.crend(); ++i, ++level)
     {
+        if ((level <= 160) && (level >= 128))
+        {
+            if (level > 128)
+            {
+                deltaCum += bitdepth_t(prevDeltaLevel - i->first);
+                deltaCnt++;
+            }
+            prevDeltaLevel = i->first;
+        }
         info->total += i->second;
         if (i->second >= modeFreq)
         {
@@ -39,6 +52,7 @@ ImageMath::Histogram::ptr ImageMath::buildHistogram(const ImageSelection::ptr& b
             info->mode = i->first;
         }
     }
+    info->hDelta = deltaCnt? bitdepth_t(std::round(1.0*deltaCum/deltaCnt)) : 1;
     return info;
 }
 

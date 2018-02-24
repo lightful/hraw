@@ -82,12 +82,12 @@ void demo()
             std::cout << "  minDN=" << stats.min << ", maxDN=" << stats.max
                       << ", meanDN=" << stats.mean << ", stdevDN=" << stats.stdev << std::endl;
             ImageMath::Histogram::ptr histogram = ImageMath::buildHistogram(image == 0? imgWhiteA : imgWhiteB);
-            ImageAlgo::Highlights highlights = ImageAlgo::getHighlights(histogram);
+            ImageAlgo::Levels levels = ImageAlgo::autoLevels(histogram);
             std::cout << "  mode(pixels)=" << histogram->mode << "(" << histogram->data.at(histogram->mode)
-                      << "), whiteLevel=" <<  highlights.whiteLevel << " ("
-                      << double(highlights.clippedCount) / double(histogram->total) * 100 << "% clipped)" << std::endl;
-            if (highlights.whiteLevel > maxWhiteLevel) maxWhiteLevel = highlights.whiteLevel;
-            if (highlights.clippedCount == 0)
+                      << "), whiteLevel=" <<  levels.whiteLevel << " ("
+                      << double(levels.clippedCount) / double(histogram->total) * 100 << "% clipped)" << std::endl;
+            if (levels.whiteLevel > maxWhiteLevel) maxWhiteLevel = levels.whiteLevel;
+            if (levels.clippedCount == 0)
             {
                 double meanSaturation = stats.mean - blackLevel;
                 std::cout << "  mean saturation (DN): " << meanSaturation << std::endl;
@@ -338,6 +338,7 @@ int main(int argc, char **argv)
         std::shared_ptr<double> ev;
         std::shared_ptr<ImageCrop> crop;
         std::shared_ptr<Loop> loop;
+        bool verbose = false;
 
         if (command == "dpraw")
         {
@@ -423,6 +424,10 @@ int main(int argc, char **argv)
                 std::stringstream(argv[++argument]) >> loop->deltaY;
                 std::stringstream(argv[++argument]) >> loop->count;
             }
+            else if (argname == "-v")
+            {
+                verbose = true;
+            }
             else
             {
                 throw ExitNotif { VA_STR("argument " << argname << " unknown") };
@@ -446,11 +451,22 @@ int main(int argc, char **argv)
                 if (ep == std::string::npos) ep = infile1.length();
                 outfile = infile1.substr(0, ep) + ".tiff";
             }
-            if (!whitePoint) throw ExitNotif{ "missing white point" };
             RawImage::ptr raw = RawImage::load(infile1, opticalBlack);
             ImageAlgo::setBlackLevel(raw, blackPoints);
-            if (!raw->hasBlackLevel()) throw ExitNotif{ "missing black point(s)" };
             ImageAlgo::setWhiteLevel(raw, whitePoint);
+            double clipped = -1;
+            if (!whitePoint || !raw->hasBlackLevel())
+            {
+                auto plain = raw->getChannel(ImageFilter::RGB());
+                ImageMath::Histogram::ptr histogram = ImageMath::buildHistogram(plain->select());
+                ImageAlgo::Levels levels = ImageAlgo::autoLevels(histogram);
+                if (!whitePoint) ImageAlgo::setWhiteLevel(raw, std::make_shared<bitdepth_t>(levels.whiteLevel));
+                if (!raw->hasBlackLevel()) ImageAlgo::setBlackLevel(raw, std::vector<double>({double(levels.blackLevel)}));
+                clipped = levels.clippedCount*100.0/double(histogram->total);
+            }
+            if (verbose) std::cout << "BlackLevel=" << bitdepth_t(std::round(raw->blackLevel[ImageFilter::Code::RGB]))
+                                   << " WhiteLevel=" << *raw->whiteLevel
+                                   << (clipped < 0? "" : VA_STR(" Clipped=" << clipped << "%")) << std::endl;
             RawImage::ptr result = ImageAlgo::clipping(raw);
             result->save(outfile);
         }
@@ -509,7 +525,7 @@ int main(int argc, char **argv)
             << std::endl
             << "    Commands:" << std::endl
             << "      histogram -i [-b|-m] [-w] [-crop]" << std::endl
-            << "      clipping  -i -b|-m -w [-o(tiff/ppm)]" << std::endl
+            << "      clipping  -i [-b|-m] [-w] [-o(tiff/ppm)] [-v]" << std::endl
             << "      stats     -i [-c] [-b] [-w] [-crop]" << std::endl
             << "      mskstats  -i -c -m [-w]" << std::endl
             << "      rgbstats  -i [-b|-m] [-crop] [-loop]" << std::endl
